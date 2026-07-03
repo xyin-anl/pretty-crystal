@@ -20,6 +20,12 @@ window.cancelAnimationFrame = pacedCancelAnimationFrame;
 globalThis.requestAnimationFrame = pacedRequestAnimationFrame;
 globalThis.cancelAnimationFrame = pacedCancelAnimationFrame;
 
+// Evaluate @react-three/fiber (and three) once up front. Test files trigger
+// lazy scene imports that can still be mid-evaluation when the next test file
+// statically imports fiber; on CI that surfaces as bogus "Export named
+// 'extend' not found" errors from bun's module loader.
+await import("@react-three/fiber");
+
 const { cleanup } = await import("@testing-library/react");
 
 afterEach(() => {
