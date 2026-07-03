@@ -1,0 +1,19 @@
+diff --git a/package.json b/package.json
+index 55c1f57a7b961cbac5c4e636b68bfa6d0d06a3cd..f8379ee455ca90052610d35f0ee3b7a798c149b5 100644
+--- a/package.json
++++ b/package.json
+@@ -87,5 +87,13 @@
+     "expo-gl": {
+       "optional": true
+     }
++  },
++  "exports": {
++    ".": {
++      "types": "./dist/react-three-fiber.cjs.d.ts",
++      "import": "./dist/react-three-fiber.esm.js",
++      "require": "./dist/react-three-fiber.cjs.js"
++    },
++    "./package.json": "./package.json"
+   }
+ }
+\ No newline at end of file
