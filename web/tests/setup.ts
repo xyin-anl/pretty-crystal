@@ -1,15 +1,15 @@
 import { afterEach, mock } from "bun:test";
 import { GlobalRegistrator } from "@happy-dom/global-registrator";
+// @ts-expect-error -- untyped dist path; the package types live on the bare specifier
+import * as reactThreeFiberEsm from "@react-three/fiber/dist/react-three-fiber.esm.js";
 
 // @react-three/fiber has no package.json "exports" map, so bun resolves it to
 // its CJS main entry, which requires the CJS three build while app code
 // imports the ESM build — evaluating three twice ("Multiple instances of
 // Three.js being imported"). Pin fiber to its ESM dist so tests share one
-// three instance, matching the vite build.
-mock.module("@react-three/fiber", () =>
-  // @ts-expect-error -- untyped dist path; the package types live on the bare specifier
-  import("@react-three/fiber/dist/react-three-fiber.esm.js"),
-);
+// three instance, matching the vite build. The factory must stay synchronous:
+// bun 1.3.13 (pinned in CI) does not await async mock.module factories.
+mock.module("@react-three/fiber", () => reactThreeFiberEsm);
 
 GlobalRegistrator.register({
   url: "http://127.0.0.1:5173",

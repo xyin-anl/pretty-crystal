@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import socket
 
 import typer.main
@@ -91,10 +92,14 @@ def test_open_browser_when_ready_skips_unavailable_server(monkeypatch) -> None:
 def test_render_help_lists_key_options() -> None:
     result = runner.invoke(cli.app, ["render", "-h"])
 
+    # Rich force-enables ANSI styling on CI (GITHUB_ACTIONS), which would
+    # break plain substring checks against the help text.
+    plain_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+
     assert result.exit_code == 0
-    assert "--style" in result.output
-    assert "--material-preset" in result.output
-    assert "--output-dir" in result.output
+    assert "--style" in plain_output
+    assert "--material-preset" in plain_output
+    assert "--output-dir" in plain_output
 
 
 def test_render_settings_merges_cli_overrides_over_style_file(tmp_path) -> None:
