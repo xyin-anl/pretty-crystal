@@ -1,0 +1,54 @@
+{
+  "id": "tachyon",
+  "label": "Tachyon",
+  "description": "Ray-tracer inspired matte shading with soft shadows and ambient occlusion, similar to OVITO's Tachyon renderer.",
+  "material": {
+    "type": "MeshStandardMaterial",
+    "props": {
+      "metalness": 0.0,
+      "roughness": 0.82,
+      "flatShading": false
+    }
+  },
+  "overrides": {
+    "polyhedron": {
+      "material": {
+        "type": "MeshStandardMaterial",
+        "props": {
+          "metalness": 0.0,
+          "roughness": 0.7,
+          "emissive": "#ffffff",
+          "emissiveIntensity": 0.02
+        }
+      }
+    }
+  },
+  "lighting": [
+    {
+      "type": "AmbientLight",
+      "props": {
+        "intensity": 1.5
+      }
+    },
+    {
+      "type": "cameraDirectional",
+      "props": {
+        "intensity": 1.9,
+        "offset": [0.55, 0.5, 0],
+        "castShadow": true
+      }
+    }
+  ],
+  "effects": [
+    {
+      "type": "ambientOcclusion",
+      "props": {
+        "aoRadius": 2.0,
+        "intensity": 3.5,
+        "distanceFalloff": 1.0,
+        "quality": "high",
+        "screenSpaceRadius": false
+      }
+    }
+  ]
+}

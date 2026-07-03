@@ -1,0 +1,107 @@
+{
+  "id": "example-preset",
+  "label": "Example Preset",
+  "description": "Copy this shape into presets/*.json and list the id in catalog.json.",
+
+  // Supported material types:
+  // - MeshBasicMaterial
+  // - MeshLambertMaterial
+  // - MeshStandardMaterial
+  //
+  // Props are passed through to the matching Three.js material. Use official
+  // Three.js property names where possible. JSON can express numbers, booleans,
+  // strings, arrays, and plain objects; runtime objects such as Texture, Color
+  // instances, and Vector classes are not loaded from this template yet. Depth
+  // cueing/fog is controlled globally by the scene and should not be set here.
+  "material": {
+    "type": "MeshStandardMaterial",
+    "props": {
+      "flatShading": false,
+      "wireframe": false,
+
+      "metalness": 0.0,
+      "roughness": 0.45,
+
+      // These are supported by Three.js materials, but Pretty Crystal scene
+      // objects currently override color, opacity, transparent, depthWrite,
+      // side, and vertexColors so atoms/bonds/polyhedra keep their own state.
+      "emissive": "#000000",
+      "emissiveIntensity": 0.0,
+      "alphaTest": 0.0,
+      "depthTest": true
+    }
+  },
+
+  // Optional per-object material overrides. The selected preset still defines
+  // one visual family; overrides are for local material tuning when an object
+  // type has a different rendering role. Supported targets:
+  // - atom
+  // - bond
+  // - polyhedron
+  //
+  // Override material props are shallow-merged over the top-level material
+  // props. Lighting stays preset-level and is not overridden per target.
+  "overrides": {
+    "polyhedron": {
+      "material": {
+        "type": "MeshStandardMaterial",
+        "props": {
+          "metalness": 0.06,
+          "roughness": 0.32,
+          "emissive": "#ffffff",
+          "emissiveIntensity": 0.035
+        }
+      }
+    }
+  },
+
+  // Supported light types:
+  // - AmbientLight: official Three.js ambient light props such as color/intensity
+  // - HemisphereLight: skyColor, groundColor, intensity
+  // - cameraDirectional: Pretty Crystal camera-relative directional light.
+  //   Set "castShadow": true to make it cast soft shadows from atoms and bonds.
+  "lighting": [
+    {
+      "type": "AmbientLight",
+      "props": {
+        "color": "#ffffff",
+        "intensity": 0.8
+      }
+    },
+    {
+      "type": "HemisphereLight",
+      "props": {
+        "skyColor": "#ffffff",
+        "groundColor": "#b8b8b8",
+        "intensity": 0.35
+      }
+    },
+    {
+      "type": "cameraDirectional",
+      "props": {
+        "color": "#ffffff",
+        "intensity": 2.0,
+        "offset": [0.32, 0.22, 0],
+        "castShadow": false
+      }
+    }
+  ],
+
+  // Optional screen-space render effects applied on top of the scene.
+  // Supported effect types:
+  // - ambientOcclusion: N8AO screen-space ambient occlusion. Props are passed
+  //   through to the N8AO pass: aoRadius (world units), intensity,
+  //   distanceFalloff, quality ("performance" | "low" | "medium" | "high" |
+  //   "ultra"), aoSamples, denoiseSamples, denoiseRadius, color, halfRes,
+  //   screenSpaceRadius.
+  "effects": [
+    {
+      "type": "ambientOcclusion",
+      "props": {
+        "aoRadius": 1.5,
+        "intensity": 3.0,
+        "quality": "medium"
+      }
+    }
+  ]
+}

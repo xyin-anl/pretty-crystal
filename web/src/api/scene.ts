@@ -1,0 +1,332 @@
+import { STRUCTURE_ATOM_COUNT_THRESHOLD } from "../model/structureLimits";
+import sceneContract from "../../../src/pretty_crystal/structures/scene_contract.json";
+
+export interface SceneSpec {
+  cell: {
+    vectors: [number, number, number][];
+  };
+  atoms: AtomSpec[];
+  bonds: BondSpec[];
+  polyhedra: PolyhedronSpec[];
+  summary: StructureSummary;
+  vectorProperties?: string[];
+  warnings?: AnalysisWarningSpec[];
+}
+
+export type BondAlgorithm = "crystal-nn" | "minimum-distance" | "cut-off-dict";
+export type AtomRadiusModel = "uniform" | "atomic" | "vdw" | "ionic";
+export type SupercellDimensions = [number, number, number];
+
+export const DEFAULT_SUPERCELL: SupercellDimensions = [1, 1, 1];
+
+export function isDefaultSupercell(supercell: SupercellDimensions): boolean {
+  return supercell[0] === 1 && supercell[1] === 1 && supercell[2] === 1;
+}
+
+export function supercellQueryValue(supercell: SupercellDimensions): string {
+  return supercell.join("x");
+}
+
+export const DEFAULT_BOND_ALGORITHM: BondAlgorithm =
+  sceneContract.defaultBondAlgorithm as BondAlgorithm;
+export const LARGE_STRUCTURE_BOND_ALGORITHM: BondAlgorithm =
+  sceneContract.largeStructureBondAlgorithm as BondAlgorithm;
+export const IMAGE_REASONS = sceneContract.imageReasons as ImageReason[];
+export const VISIBILITY_DEPENDENCIES =
+  sceneContract.visibilityDependencies as VisibilityDependency[];
+
+export const BOND_ALGORITHM_OPTIONS: { label: string; value: BondAlgorithm }[] =
+  sceneContract.bondAlgorithms.map((entry) => ({
+    label: entry.uiLabel,
+    value: entry.value as BondAlgorithm,
+  }));
+
+export interface StructureSummary {
+  formula: string;
+  atomCount: number;
+  cell: CellSummary;
+  symmetry: SymmetrySummary;
+}
+
+export interface CellSummary {
+  a: string;
+  b: string;
+  c: string;
+  alpha: string;
+  beta: string;
+  gamma: string;
+}
+
+export interface SymmetrySummary {
+  available: boolean;
+  spaceGroup: string | null;
+  spaceGroupNumber: number | null;
+  pointGroup: string | null;
+  pointGroupSchoenflies: string | null;
+  crystalSystem: string | null;
+  latticeSystem: string | null;
+}
+
+export interface SpeciesOccupancySpec {
+  element: string;
+  occupancy: number;
+}
+
+export interface AtomSpec {
+  id: string;
+  siteId: string;
+  siteIndex: number;
+  element: string;
+  // Absent in older pre-built scene files; a missing list means one fully
+  // occupied species matching `element`.
+  species?: SpeciesOccupancySpec[];
+  // Absent in older pre-built scene files; a missing flag counts as unique.
+  isSymmetryUnique?: boolean;
+  // Per-site vector properties (magnetic moments, forces) for arrow glyphs.
+  siteVectors?: Record<string, [number, number, number]>;
+  position: [number, number, number];
+  fractionalPosition: [number, number, number];
+  imageOffset: [number, number, number];
+  isPeriodicImage: boolean;
+  imageReasons: ImageReason[];
+  visibilityDependencies: VisibilityDependency[];
+  visibilityDependencyGroups: VisibilityDependency[][];
+}
+
+export type ImageReason = "boundary" | "bonded";
+
+export type VisibilityDependency = "boundaryAtoms" | "oneHopBondedAtoms";
+
+export interface BondSpec {
+  startAtomIndex: number;
+  endAtomIndex: number;
+  visibilityDependencies: VisibilityDependency[];
+  visibilityDependencyGroups: VisibilityDependency[][];
+}
+
+export interface PolyhedronSpec {
+  centerAtomIndex: number;
+  hullAtomIndices: number[];
+  faces: [number, number, number][];
+  visibilityDependencies: VisibilityDependency[];
+  visibilityDependencyGroups: VisibilityDependency[][];
+}
+
+export interface AnalysisWarningSpec {
+  code: string;
+  message: string;
+}
+
+export function atomSpeciesOccupancies(atom: AtomSpec): SpeciesOccupancySpec[] {
+  if (!atom.species || atom.species.length === 0) {
+    return [{ element: atom.element, occupancy: 1 }];
+  }
+  return atom.species;
+}
+
+export function isDisorderedAtom(atom: AtomSpec): boolean {
+  const species = atomSpeciesOccupancies(atom);
+  if (species.length > 1) {
+    return true;
+  }
+  return (species[0]?.occupancy ?? 1) < 0.9999;
+}
+
+export function defaultBondAlgorithmForScene(
+  scene: Pick<SceneSpec, "summary">,
+): BondAlgorithm {
+  if (scene.summary.atomCount < STRUCTURE_ATOM_COUNT_THRESHOLD) {
+    return DEFAULT_BOND_ALGORITHM;
+  }
+
+  return LARGE_STRUCTURE_BOND_ALGORITHM;
+}
+
+export class StructurePreviewError extends Error {
+  readonly reason: "backend-unavailable" | "preview-failed";
+
+  constructor(
+    message: string,
+    reason: "backend-unavailable" | "preview-failed" = "preview-failed",
+  ) {
+    super(message);
+    this.name = "StructurePreviewError";
+    this.reason = reason;
+  }
+}
+
+export const STATIC_SCENE_PREVIEW_URL =
+  import.meta.env.VITE_PRETTY_CRYSTAL_STATIC_SCENE ?? "";
+export const STATIC_SCENE_PREVIEW_NAME =
+  import.meta.env.VITE_PRETTY_CRYSTAL_STATIC_SCENE_NAME ?? "Example structure";
+
+export const BACKEND_UNAVAILABLE_TITLE = "Python backend is unavailable";
+export const BACKEND_UNAVAILABLE_MESSAGE =
+  "Start Pretty Crystal locally to upload or recompute structures.";
+
+export function hasStaticScenePreview(): boolean {
+  return STATIC_SCENE_PREVIEW_URL.length > 0;
+}
+
+export function isBackendUnavailablePreviewError(
+  error: unknown,
+): error is StructurePreviewError {
+  return error instanceof StructurePreviewError && error.reason === "backend-unavailable";
+}
+
+export async function loadStaticScenePreview(): Promise<SceneSpec | null> {
+  if (!hasStaticScenePreview()) {
+    return null;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(STATIC_SCENE_PREVIEW_URL);
+  } catch {
+    throw new StructurePreviewError("Static example could not be loaded.");
+  }
+
+  if (!response.ok) {
+    throw new StructurePreviewError("Static example could not be loaded.");
+  }
+
+  return (await response.json()) as SceneSpec;
+}
+
+export async function uploadStructurePreview(
+  file: File,
+  options: { bondAlgorithm?: BondAlgorithm; supercell?: SupercellDimensions } = {},
+): Promise<SceneSpec> {
+  if (hasStaticScenePreview()) {
+    throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+  }
+
+  const endpoint = previewEndpointForOptions(options);
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": file.type || "application/octet-stream",
+        "x-pretty-crystal-filename": encodeURIComponent(file.name),
+      },
+      body: file,
+    });
+  } catch {
+    throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+  }
+
+  if (!response.ok) {
+    if (isBackendUnavailableResponse(response)) {
+      throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+    }
+    throw new StructurePreviewError(await readPreviewError(response));
+  }
+
+  if (!isJsonResponse(response)) {
+    throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+  }
+
+  return (await response.json()) as SceneSpec;
+}
+
+export interface TrajectoryPreview {
+  fileNames: string[];
+  frames: SceneSpec[];
+}
+
+export async function uploadTrajectoryPreview(
+  files: File[],
+  options: {
+    align?: boolean;
+    bondAlgorithm?: BondAlgorithm;
+    supercell?: SupercellDimensions;
+  } = {},
+): Promise<TrajectoryPreview> {
+  if (hasStaticScenePreview()) {
+    throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+  }
+
+  const params = new URLSearchParams();
+  if (options.bondAlgorithm) {
+    params.set("bondAlgorithm", options.bondAlgorithm);
+  }
+  if (options.supercell && !isDefaultSupercell(options.supercell)) {
+    params.set("supercell", supercellQueryValue(options.supercell));
+  }
+  if (options.align) {
+    params.set("align", "true");
+  }
+  const query = params.toString();
+  const endpoint = query ? `/api/trajectory-preview?${query}` : "/api/trajectory-preview";
+
+  const body = new FormData();
+  for (const file of files) {
+    body.append("files", file, file.name);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, { method: "POST", body });
+  } catch {
+    throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+  }
+
+  if (!response.ok) {
+    if (isBackendUnavailableResponse(response)) {
+      throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+    }
+    throw new StructurePreviewError(await readPreviewError(response));
+  }
+  if (!isJsonResponse(response)) {
+    throw new StructurePreviewError(BACKEND_UNAVAILABLE_MESSAGE, "backend-unavailable");
+  }
+
+  return (await response.json()) as TrajectoryPreview;
+}
+
+function previewEndpointForOptions(options: {
+  bondAlgorithm?: BondAlgorithm;
+  supercell?: SupercellDimensions;
+}): string {
+  const params = new URLSearchParams();
+  if (options.bondAlgorithm) {
+    params.set("bondAlgorithm", options.bondAlgorithm);
+  }
+  if (options.supercell && !isDefaultSupercell(options.supercell)) {
+    params.set("supercell", supercellQueryValue(options.supercell));
+  }
+
+  const query = params.toString();
+  if (!query) {
+    return "/api/structure-preview";
+  }
+
+  return `/api/structure-preview?${query}`;
+}
+
+async function readPreviewError(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as {
+      detail?: string | { message?: string };
+    };
+    if (typeof payload.detail === "string") {
+      return payload.detail;
+    }
+    if (payload.detail?.message) {
+      return payload.detail.message;
+    }
+  } catch {
+    // Fall through to the status-based message.
+  }
+
+  return `Structure preview failed with status ${response.status}.`;
+}
+
+function isBackendUnavailableResponse(response: Response): boolean {
+  return response.status === 404 || response.status === 405 || !isJsonResponse(response);
+}
+
+function isJsonResponse(response: Response): boolean {
+  return response.headers?.get("content-type")?.toLowerCase().includes("application/json") ?? false;
+}
