@@ -118,6 +118,10 @@ def compute_pxrd_pattern(
         two_theta = math.degrees(2 * theta)
         if two_theta < two_theta_min - TWO_THETA_TOL or two_theta > two_theta_max + TWO_THETA_TOL:
             continue
+        # The Lorentz-polarization correction diverges at exact backscattering
+        # (2θ = 180°), which the range validation permits.
+        if math.cos(theta) < 1e-8:
+            continue
 
         hkl_ints = [int(round(index)) for index in hkl]
         s2 = (g_hkl / 2) ** 2

@@ -787,6 +787,27 @@ def test_compute_pxrd_pattern_matches_nacl_reference() -> None:
     assert second["twoTheta"] == pytest.approx(45.9, abs=0.5)
 
 
+def test_compute_pxrd_pattern_skips_degenerate_backscattering_reflection() -> None:
+    from pymatgen.core import Lattice, Structure
+
+    from pretty_crystal.structures.pxrd import compute_pxrd_pattern
+
+    # For a cubic cell with a equal to the wavelength, the (200) reflection
+    # sits exactly at 2-theta = 180 degrees, where the Lorentz-polarization
+    # correction diverges and would swamp every real peak.
+    structure = Structure(Lattice.cubic(2.0), ["H"], [[0.0, 0.0, 0.0]])
+    pattern = compute_pxrd_pattern(
+        structure, wavelength=2.0, two_theta_min=5, two_theta_max=180
+    )
+
+    peaks = pattern["peaks"]
+    assert [peak["hkl"] for peak in peaks] == [[1, 0, 0], [1, 1, 0], [1, 1, 1]]
+    assert all(peak["twoTheta"] < 180 for peak in peaks)
+    strongest = max(peaks, key=lambda peak: peak["intensity"])
+    assert strongest["hkl"] == [1, 0, 0]
+    assert strongest["intensity"] == pytest.approx(100.0)
+
+
 def test_compute_pxrd_pattern_rejects_bad_inputs() -> None:
     from pretty_crystal.structures.pxrd import (
         PxrdComputeError,
