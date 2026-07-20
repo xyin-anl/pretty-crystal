@@ -268,7 +268,7 @@ describe("App", () => {
   test("starts with an empty preview and a compact structure card", () => {
     render(<App />);
 
-    expect(screen.getByText("No structure loaded").isConnected).toBe(true);
+    expect(screen.getByText("Drop a structure file to preview").isConnected).toBe(true);
     expect(screen.queryByTestId("lattice-canvas")).toBeNull();
     expect(screen.queryByRole("button", { name: "Sidebar" })).toBeNull();
 
@@ -550,7 +550,7 @@ describe("App", () => {
 
     expect(screen.getByText("Loading structure").isConnected).toBe(true);
     const spinner = screen.getByTestId("loading-structure-spinner");
-    expect(spinner.className).toContain("motion-safe:animate-spin");
+    expect(spinner.className).toContain("crystal-mark-draw");
 
     resolveScene(sceneWithPeriodicImages());
 
@@ -569,7 +569,7 @@ describe("App", () => {
     render(<App />);
 
     expect(fetchCalls).toHaveLength(1);
-    expect(screen.getByText("No structure loaded").isConnected).toBe(true);
+    expect(screen.getByText("Drop a structure file to preview").isConnected).toBe(true);
     expect(screen.queryByTestId("lattice-canvas")).toBeNull();
     expect(screen.queryByText("NaCl.cif")).toBeNull();
   });
@@ -2027,9 +2027,86 @@ describe("App", () => {
     expect(within(structureCard).queryByRole("alert")).toBeNull();
     expect(screen.queryByText("File")).toBeNull();
     expect(screen.queryByText("bad.cif")).toBeNull();
-    expect(screen.getByText("No structure loaded").isConnected).toBe(true);
+    expect(screen.getByText("Drop a structure file to preview").isConnected).toBe(true);
     expect(screen.queryByTestId("lattice-canvas")).toBeNull();
     expect(screen.queryByRole("button", { name: "Sidebar" })).toBeNull();
+  });
+
+  test("keeps the loaded scene when the server rejects new display options", async () => {
+    const user = userEvent.setup();
+
+    await renderLoadedStructure(user);
+    queueFetchResponse(
+      errorResponse(
+        "A 6x6x6 supercell of this structure would contain 21600 atoms, above the 20000-atom limit.",
+      ),
+    );
+
+    await user.click(screen.getByRole("combobox", { name: "Bonding algorithm" }));
+    await user.click(await screen.findByRole("option", { name: "Minimum distance" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Preview failed");
+    expect(alert.textContent).toContain("above the 20000-atom limit");
+    expect(alert.textContent).not.toContain("Unsupported file");
+    expect(alert.textContent).not.toContain("pymatgen could not parse this file.");
+
+    // The structure stays loaded and the committed algorithm is unchanged.
+    expect(screen.getByTestId("lattice-canvas").isConnected).toBe(true);
+    const structureCard = screen.getByRole("complementary", { name: "Current structure" });
+    expect(within(structureCard).getByText("NaCl.cif").isConnected).toBe(true);
+    expect(
+      screen.getByRole("combobox", { name: "Bonding algorithm" }).textContent,
+    ).toContain("CrystalNN");
+
+    // Let pending async work (lazy scene imports, paced animation frames)
+    // land inside act before the next test renders.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 32));
+    });
+  });
+
+  test("ignores a stale upload that resolves after a newer one", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    // The first upload's response stays pending until the second completes.
+    let releaseStaleResponse: () => void = () => {};
+    const staleResponseReleased = new Promise<void>((resolve) => {
+      releaseStaleResponse = resolve;
+    });
+    const staleScene = sceneWithPeriodicImages({ atomCount: 8 });
+    queueFetchResponse({
+      headers: new Headers({ "content-type": "application/json" }),
+      json: async () => {
+        await staleResponseReleased;
+        return staleScene;
+      },
+      ok: true,
+    } as Response);
+    await user.upload(getFileInput(), structureFile("first.cif"));
+
+    queueFetchResponse(jsonResponse(sceneWithPeriodicImages({ atomCount: 2 })));
+    await user.upload(getFileInput(), structureFile("second.cif"));
+    await screen.findByTestId("lattice-canvas");
+
+    releaseStaleResponse();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const structureCard = screen.getByRole("complementary", { name: "Current structure" });
+    expect(within(structureCard).getByText("second.cif").isConnected).toBe(true);
+    expect(within(structureCard).getByText("2").isConnected).toBe(true);
+    expect(within(structureCard).queryByText("8")).toBeNull();
+
+    // Let pending async work (lazy scene imports, paced animation frames)
+    // land inside act before the next test renders.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 32));
+    });
   });
 
   test("shows a backend unavailable alert when the Python server cannot be reached", async () => {
@@ -2101,7 +2178,7 @@ describe("App", () => {
     expect(screen.queryByText("File")).toBeNull();
     expect(screen.queryByText("movie.mp4")).toBeNull();
     expect(fetchCalls).toHaveLength(0);
-    expect(screen.getByText("No structure loaded").isConnected).toBe(true);
+    expect(screen.getByText("Drop a structure file to preview").isConnected).toBe(true);
   });
 
   test("shows non-fatal analysis warnings while keeping the scene visible", async () => {

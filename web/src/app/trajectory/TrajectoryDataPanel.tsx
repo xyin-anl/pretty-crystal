@@ -108,7 +108,7 @@ export function TrajectoryDataPanel({
             </SelectGroup>
           </SelectContent>
         </Select>
-        <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="ml-auto font-mono text-2xs tabular-nums text-muted-foreground">
           {formatValue(values[activeFrameIndex] ?? 0)} {option.unit}
         </span>
       </div>

@@ -7,7 +7,7 @@ import { useAutoBlurSlider } from "./sharedControls";
 
 const INSPECTOR_BODY_TEXT_CLASS = "text-xs";
 const INSPECTOR_SECTION_TITLE_CLASS =
-  "text-[11px] font-bold leading-tight text-muted-foreground";
+  "text-2xs font-bold leading-tight text-muted-foreground";
 const INSPECTOR_SELECT_TRIGGER_CLASS =
   "!h-[26px] w-full !px-2 !py-0 bg-background text-xs";
 const INSPECTOR_SELECT_ITEM_CLASS = "min-h-[26px] py-1 text-xs";
@@ -144,14 +144,14 @@ export function SettingRangeRow({
           inputMode="decimal"
           value={valueText}
           aria-label={`${label} value`}
-          className="opacity-value-input h-full w-[1.35rem] border-0 bg-transparent px-0 text-center font-mono text-[0.68rem] leading-none tabular-nums outline-none"
+          className="opacity-value-input h-full w-[1.35rem] border-0 bg-transparent px-0 text-right font-mono text-2xs leading-none tabular-nums outline-none"
           onBlur={commitValueText}
           onChange={(event) => setValueText(event.target.value)}
           onKeyDown={handleValueKeyDown}
         />
         <span
           aria-hidden="true"
-          className="pointer-events-none font-mono text-[0.68rem] font-normal leading-none text-muted-foreground"
+          className="pointer-events-none font-mono text-2xs font-normal leading-none text-muted-foreground"
         >
           %
         </span>

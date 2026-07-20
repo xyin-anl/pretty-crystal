@@ -75,7 +75,8 @@ export function TrajectoryBar({
           variant="ghost"
           size="icon"
           aria-label={isPlaying ? "Pause playback" : "Play trajectory"}
-          className={TOOL_ICON_BUTTON_CLASS}
+          // Inside the pill container the button keeps the pill's curvature.
+          className={cn(TOOL_ICON_BUTTON_CLASS, "rounded-full")}
           onClick={() => setIsPlaying((currentIsPlaying) => !currentIsPlaying)}
         >
           {isPlaying ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
@@ -93,13 +94,13 @@ export function TrajectoryBar({
           type="range"
           value={activeFrameIndex}
         />
-        <span className="w-14 text-center font-mono text-[11px] tabular-nums text-muted-foreground">
+        <span className="w-14 text-center font-mono text-2xs tabular-nums text-muted-foreground">
           {activeFrameIndex + 1} / {frameCount}
         </span>
         <Select value={String(fps)} onValueChange={(value) => setFps(Number(value))}>
           <SelectTrigger
             aria-label="Playback speed"
-            className="!h-6 w-[72px] rounded-md px-2 text-[11px]"
+            className="!h-6 w-[72px] rounded-md px-2 text-2xs"
           >
             <SelectValue />
           </SelectTrigger>
@@ -115,7 +116,7 @@ export function TrajectoryBar({
         </Select>
         <Tooltip>
           <TooltipTrigger asChild>
-            <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+            <label className="flex items-center gap-1.5 text-2xs text-muted-foreground">
               Align
               <Switch
                 checked={isAligned}

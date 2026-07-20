@@ -167,7 +167,7 @@ export function PxrdPanel({
     <TooltipProvider>
       <section
         aria-label="Powder X-ray diffraction pattern"
-        className="flex h-full w-[700px] flex-col overflow-hidden rounded-xl border border-foreground/10 bg-card px-4 pb-3 pt-2.5 shadow-xl shadow-foreground/10"
+        className="flex h-full w-[700px] max-w-full flex-col overflow-hidden rounded-xl border border-foreground/10 bg-card px-4 pb-3 pt-2.5 shadow-xl shadow-foreground/10"
 
       >
       <div className="mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -201,7 +201,7 @@ export function PxrdPanel({
             </SelectGroup>
           </SelectContent>
         </Select>
-        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+        <label className="flex items-center gap-1.5 text-2xs text-muted-foreground">
           FWHM
           <input
             aria-label="Peak broadening FWHM in degrees"
@@ -216,7 +216,7 @@ export function PxrdPanel({
           <span className="w-9 font-mono tabular-nums">{fwhm.toFixed(2)}°</span>
         </label>
         <TwoThetaRangeInputs range={twoThetaRange} onCommit={setTwoThetaRange} />
-        <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+        <label className="flex items-center gap-1 text-2xs text-muted-foreground">
           <input
             aria-label="Show hkl labels"
             checked={showHklLabels}
@@ -248,7 +248,7 @@ export function PxrdPanel({
                 variant="ghost"
                 size="icon"
                 aria-label="Download PXRD as PNG"
-                className={cn(TOOL_ICON_BUTTON_CLASS, "text-[9px] font-semibold")}
+                className={cn(TOOL_ICON_BUTTON_CLASS, "text-3xs font-semibold")}
                 disabled={!pattern}
                 onClick={() => {
                   void handleDownloadPng();
@@ -265,7 +265,7 @@ export function PxrdPanel({
                 variant="ghost"
                 size="icon"
                 aria-label="Download PXRD peaks as CSV"
-                className={cn(TOOL_ICON_BUTTON_CLASS, "text-[9px] font-semibold")}
+                className={cn(TOOL_ICON_BUTTON_CLASS, "text-3xs font-semibold")}
                 disabled={!pattern}
                 onClick={handleDownloadCsv}
               >
@@ -326,10 +326,10 @@ function TwoThetaRangeInputs({
   }
 
   const inputClass =
-    "h-6 w-11 rounded-md border border-input bg-transparent px-1 text-center text-[11px] tabular-nums";
+    "h-6 w-11 rounded-md border border-input bg-transparent px-1 text-center text-2xs tabular-nums";
 
   return (
-    <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
+    <label className="flex items-center gap-1 text-2xs text-muted-foreground">
       2θ
       <input
         aria-label="Two theta minimum"

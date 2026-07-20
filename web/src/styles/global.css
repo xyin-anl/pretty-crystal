@@ -39,28 +39,40 @@
   --font-sans: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* Micro type scale for dense tool UI. Use these instead of one-off
+     arbitrary sizes; nothing in the interface goes below text-3xs (10px). */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-3xs: 0.625rem;
+  --text-3xs--line-height: 0.875rem;
 }
 
+/* Light theme only for now (see docs/front-end.md). Tokens are OKLCH so a
+   future dark theme can be derived by remapping lightness; the .dark class
+   targeted by the custom variant above is intentionally never applied yet. */
 :root {
   --radius: 0.5rem;
-  --ui-dark: #282828;
-  --background: #fafafa;
+  /* Width of the fixed left control column; overlays anchored to its right
+     edge (error alert, PXRD panel) derive their offsets from this value. */
+  --left-column-width: 328px;
+  --ui-dark: oklch(0.277 0 0);
+  --background: oklch(0.985 0 0);
   --foreground: var(--ui-dark);
-  --card: #ffffff;
+  --card: oklch(1 0 0);
   --card-foreground: var(--foreground);
   --popover: var(--ui-dark);
-  --popover-foreground: #ffffff;
+  --popover-foreground: oklch(1 0 0);
   --primary: var(--ui-dark);
-  --primary-foreground: #ffffff;
-  --secondary: #f2f2f2;
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.961 0 0);
   --secondary-foreground: var(--ui-dark);
-  --muted: #f2f2f2;
-  --muted-foreground: #666666;
-  --accent: #f2f2f2;
+  --muted: oklch(0.961 0 0);
+  --muted-foreground: oklch(0.51 0 0);
+  --accent: oklch(0.961 0 0);
   --accent-foreground: var(--ui-dark);
-  --destructive: #ea001d;
-  --border: #e6e6e6;
-  --input: #e6e6e6;
+  --destructive: oklch(0.5896 0.24 26.5978);
+  --border: oklch(0.925 0 0);
+  --input: oklch(0.925 0 0);
   --ring: var(--ui-dark);
 }
 
@@ -113,6 +125,49 @@
     height: 100% !important;
   }
 
+  /* Loading state: continuously trace and untrace the crystal mark outlines.
+     The inner hexagon runs phase-shifted so the two shapes hand off. */
+  .crystal-mark-draw polygon {
+    stroke-dasharray: 100;
+    animation: crystal-mark-draw 2.2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+
+  .crystal-mark-draw polygon:last-child {
+    animation-delay: -0.65s;
+  }
+
+  @keyframes crystal-mark-draw {
+    0% {
+      stroke-dashoffset: 100;
+    }
+
+    50% {
+      stroke-dashoffset: 0;
+    }
+
+    100% {
+      stroke-dashoffset: -100;
+    }
+  }
+
+  @keyframes crystal-mark-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+
+    50% {
+      opacity: 0.45;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .crystal-mark-draw polygon {
+      animation: crystal-mark-pulse 1.8s ease-in-out infinite;
+      stroke-dasharray: none;
+    }
+  }
+
   .tool-icon-button:hover,
   .tool-icon-button:focus-visible {
     border-color: rgb(40 40 40 / 10%) !important;
@@ -147,7 +202,7 @@
     border-color: color-mix(in srgb, var(--foreground) 14%, transparent) !important;
     background: color-mix(in srgb, var(--foreground) 6%, transparent) !important;
     animation: view-reset-feedback-a 150ms cubic-bezier(0.175, 0.885, 0.32, 1.1);
-    will-change: transform, background-color, border-color;
+    will-change: transform;
   }
 
   .tool-icon-button-reset-feedback-b,
@@ -158,7 +213,7 @@
     border-color: color-mix(in srgb, var(--foreground) 14%, transparent) !important;
     background: color-mix(in srgb, var(--foreground) 6%, transparent) !important;
     animation: view-reset-feedback-b 150ms cubic-bezier(0.175, 0.885, 0.32, 1.1);
-    will-change: transform, background-color, border-color;
+    will-change: transform;
   }
 
   .tool-icon-button-reset-feedback-a > svg {
@@ -173,12 +228,12 @@
 
   .tool-icon-button-lock-feedback-a {
     animation: view-lock-feedback-a 420ms cubic-bezier(0.175, 0.885, 0.32, 1.1);
-    will-change: transform, box-shadow;
+    will-change: transform;
   }
 
   .tool-icon-button-lock-feedback-b {
     animation: view-lock-feedback-b 420ms cubic-bezier(0.175, 0.885, 0.32, 1.1);
-    will-change: transform, box-shadow;
+    will-change: transform;
   }
 
   .tool-icon-button:focus-visible {
@@ -460,14 +515,12 @@
     .tool-icon-button-reset-feedback-a:hover,
     .tool-icon-button-reset-feedback-a:focus-visible {
       animation: view-reset-feedback-reduced-a 150ms ease-out;
-      will-change: background-color, border-color;
     }
 
     .tool-icon-button-reset-feedback-b,
     .tool-icon-button-reset-feedback-b:hover,
     .tool-icon-button-reset-feedback-b:focus-visible {
       animation: view-reset-feedback-reduced-b 150ms ease-out;
-      will-change: background-color, border-color;
     }
 
     .tool-icon-button-reset-feedback-a > svg,
@@ -477,12 +530,10 @@
 
     .tool-icon-button-lock-feedback-a {
       animation: view-lock-feedback-reduced-a 420ms ease-out;
-      will-change: box-shadow;
     }
 
     .tool-icon-button-lock-feedback-b {
       animation: view-lock-feedback-reduced-b 420ms ease-out;
-      will-change: box-shadow;
     }
 
     .zoom-slider-thumb {

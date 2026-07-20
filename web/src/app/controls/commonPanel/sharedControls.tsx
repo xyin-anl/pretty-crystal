@@ -139,7 +139,7 @@ export function PercentSliderRow({
           inputMode="numeric"
           value={valueText}
           aria-label={`${accessibleLabel} ${valueLabel} value`}
-          className="opacity-value-input h-full w-[1.35rem] border-0 bg-transparent px-0 text-center font-mono text-[0.68rem] leading-none tabular-nums outline-none"
+          className="opacity-value-input h-full w-[1.35rem] border-0 bg-transparent px-0 text-right font-mono text-2xs leading-none tabular-nums outline-none"
           disabled={disabled}
           onBlur={commitValueText}
           onChange={(event) => handleValueTextChange(event.target.value)}
@@ -147,7 +147,7 @@ export function PercentSliderRow({
         />
         <span
           aria-hidden="true"
-          className="pointer-events-none font-mono text-[0.68rem] font-normal leading-none text-muted-foreground"
+          className="pointer-events-none font-mono text-2xs font-normal leading-none text-muted-foreground"
         >
           %
         </span>

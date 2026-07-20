@@ -1217,7 +1217,7 @@ function ComponentOpacityRow({
           value={opacityText}
           disabled={inputDisabled}
           aria-label={`${label} opacity value`}
-          className="opacity-value-input h-full w-[1.35rem] border-0 bg-transparent px-0 text-center font-mono text-[0.68rem] leading-none tabular-nums outline-none"
+          className="opacity-value-input h-full w-[1.35rem] border-0 bg-transparent px-0 text-center font-mono text-2xs leading-none tabular-nums outline-none"
           onBlur={commitOpacityText}
           onChange={(event) => handleOpacityTextChange(event.target.value)}
           onKeyDown={handleOpacityKeyDown}
@@ -1225,7 +1225,7 @@ function ComponentOpacityRow({
         <span
           aria-hidden="true"
           className={cn(
-            "pointer-events-none font-mono text-[0.68rem] font-normal leading-none text-muted-foreground",
+            "pointer-events-none font-mono text-2xs font-normal leading-none text-muted-foreground",
             inputDisabled ? "text-muted-foreground/60" : null,
           )}
         >
@@ -1266,7 +1266,7 @@ function ApplyRenderStyleButton({
             size="sm"
             variant="outline"
             aria-label="Apply a render style JSON file"
-            className="h-6 gap-1 rounded-full px-2 text-[11px] [&_svg]:size-3"
+            className="h-6 gap-1 rounded-full px-2 text-2xs [&_svg]:size-3"
             onClick={() => fileInputRef.current?.click()}
           >
             <FileUp data-icon="inline-start" aria-hidden="true" />
@@ -1321,7 +1321,7 @@ function CopyRenderStyleButton({
           size="sm"
           variant="outline"
           aria-label="Copy render style JSON"
-          className="h-6 gap-1 rounded-full px-2 text-[11px] [&_svg]:size-3"
+          className="h-6 gap-1 rounded-full px-2 text-2xs [&_svg]:size-3"
           onClick={() => {
             void handleClick();
           }}

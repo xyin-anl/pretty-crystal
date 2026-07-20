@@ -21,9 +21,14 @@ describe("element radii", () => {
     expect(elementRadiusSymbols()).toContain("XX");
   });
 
-  test("fails loudly when no display radius is defined", () => {
-    expect(() => elementRadiusForModel("Missing", "uniform")).toThrow(
-      "No element radius is defined for element Missing.",
+  test("falls back to the dummy XX radii for unknown elements", () => {
+    // Superheavies such as Cm are absent from the radius table; loading such
+    // a structure must not crash the scene.
+    expect(elementRadiusForModel("Cm", "uniform")).toBeCloseTo(
+      elementRadiusForModel("XX", "uniform"),
+    );
+    expect(elementRadiusForModel("Cm", "atomic")).toBeCloseTo(
+      elementRadiusForModel("XX", "atomic"),
     );
   });
 });

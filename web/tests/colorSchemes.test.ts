@@ -66,6 +66,18 @@ describe("color schemes", () => {
     expect(elementColorForScheme("XX", "jmol")).toBe("#4c4c4c");
   });
 
+  test("falls back to the dummy XX color for unknown elements", () => {
+    // Cm has a Jmol color but no VESTA color; unknown elements render with
+    // the dummy color instead of crashing the scene.
+    expect(hasElementColor("Cm", "vesta-soft")).toBe(false);
+    expect(elementColorForScheme("Cm", "vesta-soft")).toBe(
+      elementColorForScheme("XX", "vesta-soft"),
+    );
+    expect(elementColorForScheme("Cm", "jmol")).not.toBe(
+      elementColorForScheme("XX", "jmol"),
+    );
+  });
+
   test("defines softened Jmol Soft colors", () => {
     expect(elementColorForScheme("H", "jmol-soft")).toBe("#dedede");
     expect(elementColorForScheme("N", "jmol-soft")).toBe("#4769d6");

@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -64,6 +65,14 @@ export function useStructurePreview({
   const [trajectoryFrames, setTrajectoryFrames] = useState<SceneSpec[] | null>(null);
   const [activeFrameIndex, setActiveFrameIndex] = useState(0);
   const [isTrajectoryAligned, setIsTrajectoryAligned] = useState(false);
+  // Concurrent uploads (e.g. dropping a file while one is loading) resolve in
+  // any order; only the newest request may apply its result.
+  const requestTokenRef = useRef(0);
+
+  function startPreviewRequest(): () => boolean {
+    const requestToken = ++requestTokenRef.current;
+    return () => requestTokenRef.current === requestToken;
+  }
 
   function clearTrajectoryState() {
     setTrajectoryFiles(null);
@@ -122,6 +131,8 @@ export function useStructurePreview({
         return;
       }
 
+      const isCurrentRequest = startPreviewRequest();
+
       if (files.some((file) => file.size > MAX_STRUCTURE_UPLOAD_BYTES)) {
         setSelectedFileName(null);
         setPreviewStatus("error");
@@ -147,6 +158,9 @@ export function useStructurePreview({
       try {
         if (files.length === 1) {
           const nextScene = await uploadStructurePreview(firstFile);
+          if (!isCurrentRequest()) {
+            return;
+          }
           setScene(nextScene);
           setBondAlgorithm(defaultBondAlgorithmForScene(nextScene));
           resetLoadedPreviewState(nextScene);
@@ -156,6 +170,9 @@ export function useStructurePreview({
 
         // Multiple files load as trajectory frames in the given order.
         const preview = await uploadTrajectoryPreview(files);
+        if (!isCurrentRequest()) {
+          return;
+        }
         const firstFrame = preview.frames[0];
         if (!firstFrame) {
           throw new StructurePreviewError(STRUCTURE_PARSE_ERROR_MESSAGE);
@@ -167,6 +184,9 @@ export function useStructurePreview({
         resetLoadedPreviewState(firstFrame);
         setPreviewStatus("ready");
       } catch (error) {
+        if (!isCurrentRequest()) {
+          return;
+        }
         setScene(null);
         setCurrentFile(null);
         setSelectedFileName(null);
@@ -209,6 +229,7 @@ export function useStructurePreview({
         return;
       }
 
+      const isCurrentRequest = startPreviewRequest();
       setPreviewStatus("loading");
       setErrorMessage(null);
 
@@ -219,6 +240,9 @@ export function useStructurePreview({
             bondAlgorithm: nextBondAlgorithm,
             supercell: nextSupercell,
           });
+          if (!isCurrentRequest()) {
+            return;
+          }
           const frameIndex = Math.min(activeFrameIndex, preview.frames.length - 1);
           const nextScene = preview.frames[frameIndex];
           if (!nextScene) {
@@ -238,28 +262,30 @@ export function useStructurePreview({
           bondAlgorithm: nextBondAlgorithm,
           supercell: nextSupercell,
         });
+        if (!isCurrentRequest()) {
+          return;
+        }
         setBondAlgorithm(nextBondAlgorithm);
         setSupercell(nextSupercell);
         setScene(nextScene);
         onSceneLoaded?.(nextScene);
         setPreviewStatus("ready");
       } catch (error) {
-        if (isBackendUnavailablePreviewError(error)) {
-          setPreviewStatus(scene ? "ready" : "error");
-          setErrorMessage(error.message);
+        if (!isCurrentRequest()) {
           return;
         }
 
-        setScene(null);
-        setCurrentFile(null);
-        setSelectedFileName(null);
-        clearTrajectoryState();
-        onPreviewCleared();
-        setPreviewStatus("error");
-        setErrorMessage(STRUCTURE_PARSE_ERROR_MESSAGE);
+        // Rejected options (e.g. a supercell above the atom limit) keep the
+        // loaded structure and surface the reason.
+        setPreviewStatus(scene ? "ready" : "error");
+        setErrorMessage(
+          error instanceof StructurePreviewError
+            ? error.message
+            : STRUCTURE_PARSE_ERROR_MESSAGE,
+        );
       }
     },
-    [activeFrameIndex, currentFile, isTrajectoryAligned, onPreviewCleared, scene, trajectoryFiles],
+    [activeFrameIndex, currentFile, isTrajectoryAligned, scene, trajectoryFiles],
   );
 
   const handleBondAlgorithmChange = useCallback(
@@ -318,6 +344,7 @@ export function useStructurePreview({
         return;
       }
 
+      const isCurrentRequest = startPreviewRequest();
       setPreviewStatus("loading");
       setErrorMessage(null);
       try {
@@ -326,6 +353,9 @@ export function useStructurePreview({
           bondAlgorithm,
           supercell,
         });
+        if (!isCurrentRequest()) {
+          return;
+        }
         const frameIndex = Math.min(activeFrameIndex, preview.frames.length - 1);
         const nextScene = preview.frames[frameIndex];
         if (!nextScene) {
@@ -337,6 +367,9 @@ export function useStructurePreview({
         setScene(nextScene);
         setPreviewStatus("ready");
       } catch (error) {
+        if (!isCurrentRequest()) {
+          return;
+        }
         // Alignment failures keep the unaligned frames and surface the reason.
         setPreviewStatus(scene ? "ready" : "error");
         setErrorMessage(
@@ -370,11 +403,15 @@ export function useStructurePreview({
       return;
     }
 
+    const isCurrentRequest = startPreviewRequest();
     setPreviewStatus("loading");
     setErrorMessage(null);
 
     try {
       const nextScene = await uploadStructurePreview(currentFile);
+      if (!isCurrentRequest()) {
+        return;
+      }
       setBondAlgorithm(defaultBondAlgorithmForScene(nextScene));
       setSupercell(DEFAULT_SUPERCELL);
       setScene(nextScene);
@@ -385,6 +422,9 @@ export function useStructurePreview({
       });
       setPreviewStatus("ready");
     } catch (error) {
+      if (!isCurrentRequest()) {
+        return;
+      }
       setPreviewStatus(scene ? "ready" : "error");
       setErrorMessage(
         isBackendUnavailablePreviewError(error)
@@ -394,19 +434,33 @@ export function useStructurePreview({
     }
   }, [bondAlgorithm, currentFile, previewStatus, resetLoadedPreviewState, scene, supercell]);
 
-  const errorTitle = useMemo(
-    () =>
-      errorMessage === BACKEND_UNAVAILABLE_MESSAGE
-        ? BACKEND_UNAVAILABLE_TITLE
-        : "Unsupported file",
-    [errorMessage],
-  );
+  // Backend unavailability is an environment warning; everything else is a
+  // hard failure and renders in the destructive style.
+  const errorSeverity: "warning" | "error" =
+    errorMessage === BACKEND_UNAVAILABLE_MESSAGE ? "warning" : "error";
+
+  const errorTitle = useMemo(() => {
+    if (errorMessage === BACKEND_UNAVAILABLE_MESSAGE) {
+      return BACKEND_UNAVAILABLE_TITLE;
+    }
+    if (
+      errorMessage === STRUCTURE_PARSE_ERROR_MESSAGE ||
+      errorMessage === STRUCTURE_FILE_TOO_LARGE_MESSAGE
+    ) {
+      return "Unsupported file";
+    }
+
+    // Server-provided messages (supercell limits, alignment failures) are not
+    // about the file format.
+    return "Preview failed";
+  }, [errorMessage]);
 
   return {
     activeFrameIndex,
     bondAlgorithm,
     currentFile,
     errorMessage,
+    errorSeverity,
     errorTitle,
     handleActiveFrameChange,
     handleBondAlgorithmChange,

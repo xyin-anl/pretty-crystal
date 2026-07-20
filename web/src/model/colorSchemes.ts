@@ -99,7 +99,10 @@ export function elementColorForScheme(
     return override;
   }
 
-  const color = colormapById(colorScheme).elements[element];
+  // Elements missing from a colormap (e.g. superheavies) render with the
+  // dummy "XX" color instead of crashing the scene.
+  const elements = colormapById(colorScheme).elements;
+  const color = elements[element] ?? elements.XX;
   if (color === undefined) {
     throw new Error(`No ${colorScheme} color is defined for element ${element}.`);
   }

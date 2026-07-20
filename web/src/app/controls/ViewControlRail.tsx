@@ -325,14 +325,14 @@ export function ViewControlRail({
         <label className="zoom-percent-control group flex h-[22px] w-[46px] items-baseline justify-center gap-0 rounded-md border px-0.5 transition-[background-color,border-color,box-shadow] duration-150">
           <input
             aria-label="Zoom percentage input"
-            className="w-8 bg-transparent text-right font-mono text-[11px] tabular-nums outline-none"
+            className="w-8 bg-transparent text-right font-mono text-2xs tabular-nums outline-none"
             inputMode="numeric"
             onBlur={commitZoomText}
             onChange={(event) => setZoomText(event.target.value)}
             onKeyDown={handleZoomKeyDown}
             value={zoomText}
           />
-          <span className="text-[10px] text-muted-foreground">%</span>
+          <span className="text-3xs text-muted-foreground">%</span>
         </label>
         </div>
 

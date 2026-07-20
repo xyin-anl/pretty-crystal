@@ -12,7 +12,9 @@ export function atomRadiusForModel(atom: AtomSpec, model: AtomRadiusModel): numb
 }
 
 export function elementRadiusForModel(element: string, model: AtomRadiusModel): number {
-  const radii = ELEMENT_RADII.elements[element];
+  // Elements missing from the radius table (e.g. superheavies) fall back to
+  // the dummy "XX" radii instead of crashing the scene.
+  const radii = ELEMENT_RADII.elements[element] ?? ELEMENT_RADII.elements.XX;
   if (radii === undefined) {
     throw new Error(`No element radius is defined for element ${element}.`);
   }

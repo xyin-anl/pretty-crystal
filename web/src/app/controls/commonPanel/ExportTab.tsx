@@ -83,7 +83,7 @@ const EXPORT_LEGEND_LAYOUT_LABELS: Record<ExportLegendLayout, string> = {
   vertical: "Vertical",
 };
 const EXPORT_SEGMENTED_TRIGGER_CLASS =
-  "!h-5 rounded-[4px] px-0.5 py-0 text-[0.68rem] font-medium transition-[background-color,color,box-shadow] duration-75 ease-out motion-reduce:transition-none md:text-[0.68rem]";
+  "!h-5 rounded-[4px] px-0.5 py-0 text-2xs font-medium transition-[background-color,color,box-shadow] duration-75 ease-out motion-reduce:transition-none md:text-2xs";
 
 export function ExportTabContent({
   animationExportProgress = null,
@@ -453,7 +453,7 @@ function AnimationExportSection({
           </span>
           <Input
             aria-label="Spin frame count"
-            className="!h-6 w-12 px-1 text-center text-[11px] tabular-nums"
+            className="!h-6 w-12 px-1 text-center text-2xs tabular-nums"
             inputMode="numeric"
             onChange={(event) => setTurntableFramesText(event.target.value)}
             value={turntableFramesText}
@@ -467,7 +467,7 @@ function AnimationExportSection({
           <Select value={String(fps)} onValueChange={(value) => setFps(Number(value))}>
             <SelectTrigger
               aria-label="Animation frames per second"
-              className="!h-6 w-[72px] rounded-md !px-2 !py-0 text-[11px]"
+              className="!h-6 w-[72px] rounded-md !px-2 !py-0 text-2xs"
             >
               <SelectValue />
             </SelectTrigger>
@@ -488,7 +488,7 @@ function AnimationExportSection({
             >
               <SelectTrigger
                 aria-label="Animation format"
-                className="!h-6 w-[64px] rounded-md !px-2 !py-0 text-[11px]"
+                className="!h-6 w-[64px] rounded-md !px-2 !py-0 text-2xs"
               >
                 <SelectValue />
               </SelectTrigger>
@@ -511,7 +511,7 @@ function AnimationExportSection({
             variant="outline"
             aria-label={`Export a 360 degree rotation ${formatLabel}`}
             title={`Rotate the current view a full turn and download it as an animated ${formatLabel}.`}
-            className="h-6 rounded-full px-2.5 text-[11px]"
+            className="h-6 rounded-full px-2.5 text-2xs"
             disabled={isExportingAnimation}
             onClick={() => onExportTurntableGif(turntableFrames, fps, animationFormat)}
           >
@@ -526,7 +526,7 @@ function AnimationExportSection({
                 ? `Play the loaded structure files in order and download them as an animated ${formatLabel}.`
                 : "Open multiple structure files to export them as animation frames."
             }
-            className="h-6 rounded-full px-2.5 text-[11px]"
+            className="h-6 rounded-full px-2.5 text-2xs"
             disabled={isExportingAnimation || !hasTrajectory}
             onClick={() => onExportSeriesGif?.(fps, animationFormat)}
           >
@@ -534,7 +534,7 @@ function AnimationExportSection({
             {hasTrajectory ? ` (${trajectoryFrameCount})` : ""}
           </Button>
           {animationExportProgress ? (
-            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+            <span className="font-mono text-3xs tabular-nums text-muted-foreground">
               rendering {animationExportProgress.renderedFrames}/
               {animationExportProgress.frameCount}
             </span>
@@ -818,7 +818,7 @@ function ExportSizeInput({
         inputMode="numeric"
         value={valueText}
         aria-label={accessibleLabel}
-        className="h-6 w-11 px-1.5 text-left font-mono text-[0.68rem] tabular-nums focus-visible:border-ring/20 focus-visible:bg-background/80 focus-visible:ring-[1px] focus-visible:ring-ring/20 md:text-[0.68rem]"
+        className="h-6 w-11 px-1.5 text-left font-mono text-2xs tabular-nums focus-visible:border-ring/20 focus-visible:bg-background/80 focus-visible:ring-[1px] focus-visible:ring-ring/20 md:text-2xs"
         onBlur={commitValueText}
         onChange={(event) => setValueText(event.target.value)}
         onKeyDown={handleValueKeyDown}

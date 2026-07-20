@@ -217,14 +217,14 @@ function VectorEditorRow({
                 onValueChange={(value) => onValueChange(index, value)}
                 onKeyDown={onKeyDown}
               />
-              <span className="shrink-0 text-[0.68rem] font-semibold italic leading-none text-muted-foreground">
+              <span className="shrink-0 text-2xs font-semibold italic leading-none text-muted-foreground">
                 {basisLabel}
               </span>
             </label>
             {index < basisLabels.length - 1 ? (
               <span
                 aria-hidden="true"
-                className="text-[0.68rem] font-semibold leading-none text-muted-foreground"
+                className="text-2xs font-semibold leading-none text-muted-foreground"
               >
                 +
               </span>
@@ -281,7 +281,7 @@ function VectorCoefficientInput({
       inputMode="decimal"
       value={displayedValue}
       aria-label={accessibleLabel}
-      className="h-[22px] w-[2.75rem] min-w-0 px-1 text-right font-mono text-[0.68rem] tabular-nums focus-visible:border-ring/20 focus-visible:bg-background/80 focus-visible:ring-[1px] focus-visible:ring-ring/20 md:text-[0.68rem]"
+      className="h-[22px] w-[2.75rem] min-w-0 px-1 text-right font-mono text-2xs tabular-nums focus-visible:border-ring/20 focus-visible:bg-background/80 focus-visible:ring-[1px] focus-visible:ring-ring/20 md:text-2xs"
       onBlur={handleBlur}
       onChange={handleChange}
       onFocus={handleFocus}

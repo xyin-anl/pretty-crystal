@@ -12,7 +12,7 @@ const alertVariants = cva(
         default:
           "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-50",
         destructive:
-          "bg-card text-destructive *:data-[slot=alert-description]:text-destructive/90 [&>svg]:text-current",
+          "border-red-200 bg-red-50 text-red-900 dark:border-red-900 dark:bg-red-950 dark:text-red-50",
       },
     },
     defaultVariants: {
@@ -45,7 +45,7 @@ function Alert({
         <button
           type="button"
           aria-label={dismissLabel}
-          className="absolute right-2 top-2 inline-flex size-6 items-center justify-center rounded-md text-current/70 outline-none transition-colors hover:bg-amber-100 hover:text-current focus-visible:ring-[3px] focus-visible:ring-amber-400/40 dark:hover:bg-amber-900"
+          className="absolute right-2 top-2 inline-flex size-6 items-center justify-center rounded-md text-current/70 outline-none transition-colors hover:bg-current/10 hover:text-current focus-visible:ring-[3px] focus-visible:ring-current/30"
           onClick={onDismiss}
         >
           <XIcon aria-hidden="true" className="size-3.5" />
@@ -76,7 +76,7 @@ function AlertDescription({
     <div
       data-slot="alert-description"
       className={cn(
-        "col-start-2 grid justify-items-start gap-1 text-sm text-current [&_p]:leading-relaxed",
+        "col-start-2 grid justify-items-start gap-1 text-sm text-pretty text-current [&_p]:leading-relaxed",
         className
       )}
       {...props}

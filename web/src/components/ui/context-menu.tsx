@@ -25,7 +25,7 @@ function ContextMenuContent({
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
         className={cn(
-          "z-50 min-w-[8rem] overflow-hidden rounded-xl border bg-background p-1 text-[13px] text-foreground shadow-md animate-in fade-in-0 zoom-in-95",
+          "z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-xl border bg-background p-1 text-[13px] text-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
           className,
         )}
         {...props}
@@ -189,7 +189,7 @@ function ContextMenuSubContent({
     <ContextMenuPrimitive.SubContent
         data-slot="context-menu-sub-content"
         className={cn(
-        "z-50 min-w-[8rem] overflow-hidden rounded-xl border bg-background p-1 text-[13px] text-foreground shadow-md animate-in fade-in-0 zoom-in-95",
+        "z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-xl border bg-background p-1 text-[13px] text-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95",
         className,
       )}
       {...props}

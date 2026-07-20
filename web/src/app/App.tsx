@@ -11,6 +11,7 @@ import {
 import { cn } from "@/lib/utils";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -20,6 +21,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { AtomInspectorCard } from "./AtomInspectorCard";
+import { CrystalMark } from "./CrystalMark";
 import type { SceneSpec } from "../api/scene";
 import { inspectedAtomInfoForId } from "./atomInspector";
 import { LatticeScene } from "../scene/LatticeSceneLazy";
@@ -36,6 +38,7 @@ import { deriveElementLegendEntries } from "./elementLegend";
 import { renderStyleSettingsJson } from "../export/renderStyleExport";
 import { useAnimationExport } from "./hooks/useAnimationExport";
 import { useFigureExportController } from "./hooks/useFigureExportController";
+import { useGlobalShortcuts } from "./hooks/useGlobalShortcuts";
 import { useLockedInteractionFeedback } from "./hooks/useLockedInteractionFeedback";
 import { usePreviewCameraCommands } from "./hooks/usePreviewCameraCommands";
 import { useStructurePreview } from "./hooks/useStructurePreview";
@@ -52,6 +55,7 @@ import {
   useViewportSize,
 } from "./layout/overlayLayout";
 import { StructureSummaryCard } from "./panels/StructureSummaryCard";
+import { ShortcutSheet } from "./ShortcutSheet";
 import {
   applyStylePreferences,
   clearUserPreferences,
@@ -151,6 +155,7 @@ export function App() {
   const [isPxrdPanelMounted, setIsPxrdPanelMounted] = useState(false);
   const [isPxrdPanelVisible, setIsPxrdPanelVisible] = useState(false);
   const [isFileDragActive, setIsFileDragActive] = useState(false);
+  const [isShortcutSheetOpen, setIsShortcutSheetOpen] = useState(false);
   const viewportSize = useViewportSize();
   // The docked PXRD panel lives outside the scrollable left column, so its
   // height has to track the summary card instead of relying on CSS insets.
@@ -193,6 +198,7 @@ export function App() {
     bondAlgorithm,
     currentFile,
     errorMessage,
+    errorSeverity,
     errorTitle,
     handleActiveFrameChange,
     handleBondAlgorithmChange,
@@ -599,6 +605,25 @@ export function App() {
     () => orientationGizmoSizeForViewport(viewportSize, effectivePreviewSafeArea),
     [effectivePreviewSafeArea, viewportSize],
   );
+  const hasLoadedScene = scene !== null && previewStatus !== "loading";
+  const trajectoryFrameCount = trajectoryFrames?.length ?? 0;
+  useGlobalShortcuts({
+    onNextFrame:
+      trajectoryFrameCount > 1
+        ? () => handleActiveFrameChange(activeFrameIndex + 1)
+        : undefined,
+    onOpenFile: () => fileInputRef.current?.click(),
+    onPreviousFrame:
+      trajectoryFrameCount > 1
+        ? () => handleActiveFrameChange(activeFrameIndex - 1)
+        : undefined,
+    onResetView: hasLoadedScene ? handleResetView : undefined,
+    onSelectTab: hasLoadedScene ? setActiveCommonPanelTab : undefined,
+    onToggleShortcutSheet: () => {
+      setIsShortcutSheetOpen((isOpen) => !isOpen);
+    },
+  });
+
   const renderPreviewContextMenuContent = () => (
     <ContextMenuContent className="w-36">
       <ContextMenuGroup>
@@ -608,6 +633,9 @@ export function App() {
         >
           <RotateCcw aria-hidden="true" />
           Reset view
+          <span aria-hidden="true" className="ml-auto pl-4 font-mono text-2xs text-muted-foreground">
+            R
+          </span>
         </ContextMenuItem>
       </ContextMenuGroup>
       <ContextMenuSeparator />
@@ -615,6 +643,9 @@ export function App() {
         <ContextMenuItem onSelect={() => fileInputRef.current?.click()}>
           <FolderOpen aria-hidden="true" />
           Open file
+          <span aria-hidden="true" className="ml-auto pl-4 font-mono text-2xs text-muted-foreground">
+            O
+          </span>
         </ContextMenuItem>
         <ContextMenuItem
           disabled={!scene || isExporting || previewStatus === "loading"}
@@ -759,16 +790,35 @@ export function App() {
                 data-state={previewStatus}
               >
                 {previewStatus === "loading" ? (
-                  <span className="inline-flex items-center gap-2">
-                    <span
-                      aria-hidden="true"
+                  <span className="inline-flex flex-col items-center gap-3">
+                    <CrystalMark
+                      animated
                       data-testid="loading-structure-spinner"
-                      className="inline-flex size-3 shrink-0 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground motion-safe:animate-spin motion-safe:[animation-duration:450ms]"
+                      className="size-9 shrink-0"
                     />
                     Loading structure
                   </span>
                 ) : (
-                  "No structure loaded"
+                  <div className="flex max-w-xs flex-col items-center gap-4 px-6 text-center">
+                    <CrystalMark className="size-11 opacity-90" />
+                    <div className="flex flex-col gap-1">
+                      <p className="text-sm font-medium text-foreground">
+                        Drop a structure file to preview
+                      </p>
+                      <p className="text-xs text-pretty leading-relaxed">
+                        CIF, POSCAR, and other pymatgen-supported formats.
+                        Multiple files load as trajectory frames.
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 rounded-full px-3 text-xs"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Browse files
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
@@ -839,7 +889,7 @@ export function App() {
       ) : null}
 
       {scene && (isPxrdPanelMounted || isTrajectoryLoaded) ? (
-        <div className="pointer-events-none absolute left-[328px] top-4 z-20 flex w-[700px] max-w-[calc(100vw-344px)] flex-col">
+        <div className="pointer-events-none absolute left-(--left-column-width) top-4 z-20 flex w-[700px] max-w-[calc(100vw-var(--left-column-width)-1rem)] flex-col">
           {isPxrdPanelMounted ? (
             // While visible the wrapper tracks the card height instantly (the
             // card's own expansion already animates); on hide the occupied
@@ -871,7 +921,7 @@ export function App() {
         </div>
       ) : null}
 
-      <div className="pointer-events-none fixed inset-y-0 left-0 z-10 w-[328px] max-w-[100vw]">
+      <div className="pointer-events-none fixed inset-y-0 left-0 z-10 w-(--left-column-width) max-w-[100vw]">
         <div className="pointer-events-auto flex max-h-full flex-col gap-4 overflow-y-auto overscroll-contain p-4 [scrollbar-width:thin]">
           <div ref={summaryCardWrapperRef}>
             <StructureSummaryCard
@@ -961,9 +1011,13 @@ export function App() {
 
       {errorMessage ? (
         <Alert
+          variant={errorSeverity === "warning" ? "default" : "destructive"}
           className={cn(
             "fixed top-4 z-20 w-[320px] rounded-xl shadow-sm shadow-foreground/5",
-            scene ? "left-[386px]" : "left-[328px]",
+            "animate-in fade-in-0 slide-in-from-top-1 duration-200 ease-out motion-reduce:animate-none",
+            scene
+              ? "left-[calc(var(--left-column-width)+58px)]"
+              : "left-(--left-column-width)",
             "max-[760px]:left-4 max-[760px]:right-4 max-[760px]:top-[10rem] max-[760px]:w-auto",
           )}
           onDismiss={() => setErrorMessage(null)}
@@ -972,6 +1026,10 @@ export function App() {
           <AlertTitle className="font-semibold">{errorTitle}</AlertTitle>
           <AlertDescription>{errorMessage}</AlertDescription>
         </Alert>
+      ) : null}
+
+      {isShortcutSheetOpen ? (
+        <ShortcutSheet onClose={() => setIsShortcutSheetOpen(false)} />
       ) : null}
     </main>
   );
