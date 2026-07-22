@@ -6,6 +6,7 @@ import glossyPresetData from "../data/material-presets/presets/glossy.json";
 import metallicPresetData from "../data/material-presets/presets/metallic.json";
 import modernMattePresetData from "../data/material-presets/presets/modern-matte.json";
 import tachyonPresetData from "../data/material-presets/presets/tachyon.json";
+import tachyonSoftPresetData from "../data/material-presets/presets/tachyon-soft.json";
 
 export type MaterialPresetId = string;
 export type MaterialPresetMaterialType =
@@ -91,6 +92,7 @@ const STATIC_MATERIAL_PRESET_MODULES: Record<string, unknown> = {
   "../data/material-presets/presets/metallic.json": metallicPresetData,
   "../data/material-presets/presets/modern-matte.json": modernMattePresetData,
   "../data/material-presets/presets/tachyon.json": tachyonPresetData,
+  "../data/material-presets/presets/tachyon-soft.json": tachyonSoftPresetData,
 };
 const MATERIAL_PRESET_ID_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const SUPPORTED_MATERIAL_TYPES = new Set<MaterialPresetMaterialType>([

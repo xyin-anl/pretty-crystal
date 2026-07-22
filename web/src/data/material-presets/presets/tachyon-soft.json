@@ -1,0 +1,54 @@
+{
+  "id": "tachyon-soft",
+  "label": "Tachyon Soft",
+  "description": "Tachyon's matte ray-traced look with gentler shading: no hard cast shadows, ambient lifted over directional, and broader, lighter ambient occlusion carrying the depth.",
+  "material": {
+    "type": "MeshStandardMaterial",
+    "props": {
+      "metalness": 0.0,
+      "roughness": 0.82,
+      "flatShading": false
+    }
+  },
+  "overrides": {
+    "polyhedron": {
+      "material": {
+        "type": "MeshStandardMaterial",
+        "props": {
+          "metalness": 0.0,
+          "roughness": 0.7,
+          "emissive": "#ffffff",
+          "emissiveIntensity": 0.02
+        }
+      }
+    }
+  },
+  "lighting": [
+    {
+      "type": "AmbientLight",
+      "props": {
+        "intensity": 1.9
+      }
+    },
+    {
+      "type": "cameraDirectional",
+      "props": {
+        "intensity": 1.4,
+        "offset": [0.55, 0.5, 0],
+        "castShadow": false
+      }
+    }
+  ],
+  "effects": [
+    {
+      "type": "ambientOcclusion",
+      "props": {
+        "aoRadius": 2.6,
+        "intensity": 2.2,
+        "distanceFalloff": 1.0,
+        "quality": "high",
+        "screenSpaceRadius": false
+      }
+    }
+  ]
+}
