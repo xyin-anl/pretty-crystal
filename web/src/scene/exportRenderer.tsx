@@ -61,6 +61,7 @@ export interface StructureRasterMetadata {
   frame: {
     centerX: number;
     centerY: number;
+    groupPosition: [number, number, number];
     supersampling: number;
     zoom: number;
   };
@@ -371,6 +372,7 @@ export function structureRasterMetadata({
     frame: {
       centerX: exportFramePlan.centerX / supersampling,
       centerY: exportFramePlan.centerY / supersampling,
+      groupPosition,
       supersampling,
       zoom: exportFramePlan.zoom / supersampling,
     },

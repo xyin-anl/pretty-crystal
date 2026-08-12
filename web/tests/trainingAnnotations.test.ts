@@ -36,6 +36,7 @@ describe("training render annotations", () => {
     expect(metadata.camera.matrixLayout).toBe("row-major");
     expect(metadata.camera.projectionMatrix).toHaveLength(4);
     expect(metadata.camera.viewMatrix).toHaveLength(4);
+    expect(metadata.frame.groupPosition).toEqual([0, 0, 0]);
     expect(metadata.atoms).toHaveLength(1);
     expect(metadata.atoms[0]?.xy[0]).toBeCloseTo(50, 8);
     expect(metadata.atoms[0]?.xy[1]).toBeCloseTo(50, 8);
@@ -117,4 +118,3 @@ function sceneWithAtom(position: [number, number, number]): SceneSpec {
     },
   };
 }
-

@@ -182,8 +182,8 @@ metadata = sample.metadata()
 Protocol version 1 returns RGB bytes; exact orthographic camera matrices and
 pose; projected atom centers in final-image pixels; camera-space and clip-space
 center depths; source site indices and periodic offsets; display bonds and
-polyhedra; the renderer scene; and resolved request settings. Matrices are
-row-major.
+polyhedra; the renderer scene and scene-group translation; and resolved request
+settings. Matrices are row-major.
 
 `withinFrame` means that an atom center is inside the camera frustum. It is not
 an occlusion label. Exact visibility and occlusion fractions require the future

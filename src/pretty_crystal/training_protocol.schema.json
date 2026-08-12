@@ -86,10 +86,17 @@
         "frame": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["centerX", "centerY", "supersampling", "zoom"],
+          "required": [
+            "centerX",
+            "centerY",
+            "groupPosition",
+            "supersampling",
+            "zoom"
+          ],
           "properties": {
             "centerX": {"type": "number"},
             "centerY": {"type": "number"},
+            "groupPosition": {"$ref": "#/$defs/vector3"},
             "supersampling": {"type": "integer", "minimum": 1},
             "zoom": {"type": "number", "exclusiveMinimum": 0}
           }
