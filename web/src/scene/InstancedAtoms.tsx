@@ -222,6 +222,10 @@ export function InstancedAtoms({
         onDoubleClick={handleDoubleClick}
         receiveShadow
         renderOrder={STRUCTURE_RENDER_ORDER.atomMesh}
+        userData={{
+          prettyCrystalComponent: "atom-instances",
+          renderAtomIds: atomInstances.map((instance) => instance.atom.id),
+        }}
       >
         <sphereGeometry
           args={[

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pretty-crystal.local/schemas/training-protocol-1.json",
+  "$id": "https://pretty-crystal.local/schemas/training-protocol-2.json",
   "title": "Pretty Crystal training sample metadata",
   "type": "object",
   "additionalProperties": false,
@@ -14,7 +14,7 @@
     "annotations"
   ],
   "properties": {
-    "renderer_protocol_version": {"const": 1},
+    "renderer_protocol_version": {"const": 2},
     "structure_id": {"type": "string", "minLength": 1},
     "canonical_structure_hash": {"type": "string", "minLength": 1},
     "seed": {"type": "integer", "minimum": 0},
@@ -50,7 +50,36 @@
               "siteId": {"type": "string"},
               "siteIndex": {"type": "integer", "minimum": 0},
               "withinFrame": {"type": "boolean"},
-              "xy": {"$ref": "#/$defs/vector2"}
+              "xy": {"$ref": "#/$defs/vector2"},
+              "instance": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "boundingBox",
+                  "instanceColor",
+                  "instanceId",
+                  "occlusionFractionEstimate",
+                  "projectedFullAreaPixelsEstimate",
+                  "projectedInFrameAreaPixelsEstimate",
+                  "renderAtomId",
+                  "visiblePixelCount"
+                ],
+                "properties": {
+                  "boundingBox": {
+                    "oneOf": [
+                      {"type": "null"},
+                      {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "integer", "minimum": 0}}
+                    ]
+                  },
+                  "instanceColor": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "integer", "minimum": 0, "maximum": 255}},
+                  "instanceId": {"type": "integer", "minimum": 1, "maximum": 16777215},
+                  "occlusionFractionEstimate": {"type": "number", "minimum": 0, "maximum": 1},
+                  "projectedFullAreaPixelsEstimate": {"type": "number", "minimum": 0},
+                  "projectedInFrameAreaPixelsEstimate": {"type": "number", "minimum": 0},
+                  "renderAtomId": {"type": "string"},
+                  "visiblePixelCount": {"type": "integer", "minimum": 0}
+                }
+              }
             }
           }
         },
@@ -59,7 +88,9 @@
           "additionalProperties": false,
           "required": [
             "height",
+            "far",
             "matrixLayout",
+            "near",
             "position",
             "projection",
             "projectionMatrix",
@@ -71,7 +102,9 @@
           ],
           "properties": {
             "height": {"type": "integer", "minimum": 1},
+            "far": {"type": "number"},
             "matrixLayout": {"const": "row-major"},
+            "near": {"type": "number", "exclusiveMinimum": 0},
             "position": {"$ref": "#/$defs/vector3"},
             "projection": {"const": "orthographic"},
             "projectionMatrix": {"$ref": "#/$defs/matrix4"},
@@ -101,7 +134,64 @@
             "zoom": {"type": "number", "exclusiveMinimum": 0}
           }
         },
-        "polyhedra": {"type": "array", "items": {"type": "object"}}
+        "polyhedra": {"type": "array", "items": {"type": "object"}},
+        "training": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "atomInstances": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["backgroundId", "colorEncoding", "occluderComponents"],
+              "properties": {
+                "backgroundId": {"const": 0},
+                "colorEncoding": {"const": "rgb24-little-endian"},
+                "occluderComponents": {
+                  "const": "visible-mesh-geometry-excluding-screen-space-lines"
+                }
+              }
+            },
+            "depth": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "backgroundValue",
+                "cameraDepthFormula",
+                "excludedGeometry",
+                "far",
+                "near",
+                "shape",
+                "storageDtype",
+                "transferDtype",
+                "transferByteOrder",
+                "valueConvention"
+              ],
+              "properties": {
+                "backgroundValue": {"const": 1},
+                "cameraDepthFormula": {"const": "near + depth * (far - near)"},
+                "excludedGeometry": {
+                  "type": "array",
+                  "prefixItems": [{"const": "screen-space-lines"}],
+                  "items": false
+                },
+                "far": {"type": "number"},
+                "near": {"type": "number", "exclusiveMinimum": 0},
+                "shape": {
+                  "type": "array",
+                  "prefixItems": [
+                    {"type": "integer", "minimum": 1},
+                    {"type": "integer", "minimum": 1}
+                  ],
+                  "items": false
+                },
+                "storageDtype": {"const": "float16"},
+                "transferDtype": {"const": "float32"},
+                "transferByteOrder": {"const": "little-endian"},
+                "valueConvention": {"const": "orthographic-normalized-device-depth"}
+              }
+            }
+          }
+        }
       }
     }
   },

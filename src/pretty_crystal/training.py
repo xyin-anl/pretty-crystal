@@ -6,13 +6,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from pretty_crystal.figures import RenderedFigure, _merge_settings, _renderer, _resolve_structure
 
 if TYPE_CHECKING:
     from pymatgen.core import Structure
 
-RENDERER_PROTOCOL_VERSION = 1
-_SUPPORTED_OUTPUTS = frozenset({"rgb", "metadata"})
+RENDERER_PROTOCOL_VERSION = 2
+_SUPPORTED_OUTPUTS = frozenset({"rgb", "atom_instances", "depth", "metadata"})
 
 
 @dataclass(frozen=True)
@@ -20,6 +22,8 @@ class TrainingSample:
     """One rendered RGB sample and its renderer-owned annotation contract."""
 
     rgb: RenderedFigure
+    atom_instances: RenderedFigure | None
+    depth: np.ndarray | None
     structure_id: str
     canonical_structure_hash: str
     seed: int
@@ -57,12 +61,7 @@ def render_training_sample(
     file_name: str | None = None,
     outputs: tuple[str, ...] = ("rgb", "metadata"),
 ) -> TrainingSample:
-    """Render deterministic RGB and exact camera/projected-atom annotations.
-
-    Atom-instance and depth outputs are intentionally rejected until their
-    renderer passes are implemented; the API never substitutes approximate
-    data for a requested supervision target.
-    """
+    """Render deterministic RGB and requested renderer-owned supervision passes."""
     unsupported = set(outputs) - _SUPPORTED_OUTPUTS
     if unsupported:
         names = ", ".join(sorted(unsupported))
@@ -97,15 +96,38 @@ def render_training_sample(
         scene,
         file_name=resolved_name,
         settings=settings,
+        outputs=tuple(output for output in outputs if output in {"atom_instances", "depth"}),
     )
     if rendered.renderer_protocol_version != RENDERER_PROTOCOL_VERSION:
         raise RuntimeError(
             "Renderer protocol mismatch: "
             f"expected {RENDERER_PROTOCOL_VERSION}, got {rendered.renderer_protocol_version}."
         )
+    if "atom_instances" in outputs and rendered.atom_instances is None:
+        raise RuntimeError("Renderer omitted the requested atom-instance pass.")
+    if "depth" in outputs and rendered.depth is None:
+        raise RuntimeError("Renderer omitted the requested depth pass.")
+
+    depth = None
+    if rendered.depth is not None:
+        if rendered.depth_shape is None:
+            raise RuntimeError("Renderer returned depth bytes without a depth shape.")
+        depth = np.frombuffer(rendered.depth, dtype="<f4").reshape(rendered.depth_shape).copy()
+        if not np.isfinite(depth).all() or np.any((depth < 0) | (depth > 1)):
+            raise RuntimeError("Renderer returned depth values outside the finite [0, 1] range.")
 
     return TrainingSample(
         rgb=RenderedFigure(rendered.rgb.data, rendered.rgb.file_name, rendered.rgb.format),
+        atom_instances=(
+            RenderedFigure(
+                rendered.atom_instances.data,
+                rendered.atom_instances.file_name,
+                rendered.atom_instances.format,
+            )
+            if rendered.atom_instances is not None
+            else None
+        ),
+        depth=depth,
         structure_id=structure_id,
         canonical_structure_hash=canonical_structure_hash,
         seed=seed,

@@ -1,7 +1,6 @@
 import { createRoot, type RootState } from "@react-three/fiber";
 import { useLayoutEffect } from "react";
-import type { Camera } from "three";
-import { Matrix4, Quaternion, Vector3 } from "three";
+import { Matrix4, OrthographicCamera, Quaternion, Vector3, type Camera } from "three";
 
 import type { SceneSpec } from "../api/scene";
 import type {
@@ -31,6 +30,11 @@ import {
 } from "./materialPresetResolver";
 import { DEFAULT_RENDERER_PARAMETERS } from "./rendererParameters";
 import {
+  renderStructureTrainingPasses,
+  type StructureTrainingPasses,
+} from "./trainingPasses";
+import { atomRadiusForModel } from "./sceneGeometry";
+import {
   ORIENTATION_GIZMO_CAMERA_POSITION,
   ORIENTATION_GIZMO_LABEL_DISTANCE,
   ORIENTATION_GIZMO_SCALE,
@@ -50,6 +54,7 @@ export interface RasterExportImage {
   contentBounds?: RasterExportBounds;
   height: number;
   structureMetadata?: StructureRasterMetadata;
+  trainingPasses?: StructureTrainingPasses;
   textItems?: RasterExportTextItem[];
   width: number;
 }
@@ -66,6 +71,15 @@ export interface StructureRasterMetadata {
     zoom: number;
   };
   polyhedra: SceneSpec["polyhedra"];
+  training?: {
+    atomInstances?: Omit<
+      NonNullable<StructureTrainingPasses["atomInstances"]>,
+      "annotations" | "blob"
+    >;
+    depth?: Omit<NonNullable<StructureTrainingPasses["depth"]>, "data"> & {
+      storageDtype: "float16";
+    };
+  };
 }
 
 export interface StructureRasterCameraMetadata {
@@ -76,6 +90,8 @@ export interface StructureRasterCameraMetadata {
   projectionMatrix: number[][];
   quaternion: [number, number, number, number];
   target: [number, number, number];
+  far: number;
+  near: number;
   up: [number, number, number];
   viewMatrix: number[][];
   width: number;
@@ -91,6 +107,7 @@ export interface ProjectedAtomAnnotation {
   siteIndex: number;
   withinFrame: boolean;
   xy: [number, number];
+  instance?: import("./trainingPasses").AtomInstanceAnnotation;
 }
 
 export type RasterExportImageFormat = "jpg" | "png";
@@ -131,6 +148,7 @@ export interface RenderStructureRasterOptions {
   unitCellLineColor?: string;
   unitCellLineStyle: UnitCellLineStyle;
   width: number;
+  trainingOutputs?: readonly ("atom_instances" | "depth")[];
 }
 
 export interface StructureExportFrameOverride {
@@ -171,6 +189,7 @@ export async function renderStructureRasterImage({
   unitCellLineColor,
   unitCellLineStyle,
   width,
+  trainingOutputs = [],
 }: RenderStructureRasterOptions): Promise<RasterExportImage> {
   const renderWidth = width * supersampling;
   const renderHeight = height * supersampling;
@@ -283,20 +302,86 @@ export async function renderStructureRasterImage({
     const outputCanvas =
       supersampling === 1 ? canvas : downsampleCanvas(canvas, width, height);
     const blob = await canvasToRasterBlob(outputCanvas, imageFormat, backgroundColor);
+    const structureMetadata = structureRasterMetadata({
+      camera: state.camera,
+      cameraPose,
+      exportFramePlan,
+      groupPosition: layout.groupPosition,
+      height,
+      scene,
+      supersampling,
+      width,
+    });
+    let trainingPasses: StructureTrainingPasses | undefined;
+    if (trainingOutputs.length > 0) {
+      if (!(state.camera instanceof OrthographicCamera)) {
+        throw new Error("Training supervision passes require an orthographic camera.");
+      }
+      const finalZoom = exportFramePlan.zoom / supersampling;
+      const atomRadiusPixels = new Map(
+        scene.atoms.map((atom) => [
+          atom.id,
+          atomRadiusForModel(atom, style.atomRadiusModel) *
+            (style.atomRadius / 100) *
+            finalZoom,
+        ]),
+      );
+      trainingPasses = await renderStructureTrainingPasses({
+        atomRadiusPixels,
+        camera: state.camera,
+        height,
+        outputs: trainingOutputs,
+        projectedAtoms: structureMetadata.atoms,
+        renderer: state.gl,
+        scene: state.scene,
+        width,
+      });
+      if (trainingPasses.atomInstances) {
+        const instancesByAtomId = new Map(
+          trainingPasses.atomInstances.annotations.map((annotation) => [
+            annotation.renderAtomId,
+            annotation,
+          ]),
+        );
+        structureMetadata.atoms = structureMetadata.atoms.map((atom) => ({
+          ...atom,
+          instance: instancesByAtomId.get(atom.renderAtomId),
+        }));
+      }
+      structureMetadata.training = {
+        ...(trainingPasses.atomInstances
+          ? {
+              atomInstances: {
+                backgroundId: trainingPasses.atomInstances.backgroundId,
+                colorEncoding: trainingPasses.atomInstances.colorEncoding,
+                occluderComponents: trainingPasses.atomInstances.occluderComponents,
+              },
+            }
+          : {}),
+        ...(trainingPasses.depth
+          ? {
+              depth: {
+                backgroundValue: trainingPasses.depth.backgroundValue,
+                cameraDepthFormula: trainingPasses.depth.cameraDepthFormula,
+                excludedGeometry: trainingPasses.depth.excludedGeometry,
+                far: trainingPasses.depth.far,
+                near: trainingPasses.depth.near,
+                shape: trainingPasses.depth.shape,
+                storageDtype: "float16" as const,
+                transferDtype: trainingPasses.depth.transferDtype,
+                transferByteOrder: trainingPasses.depth.transferByteOrder,
+                valueConvention: trainingPasses.depth.valueConvention,
+              },
+            }
+          : {}),
+      };
+    }
     return {
       blob,
       contentBounds: structureFrameContentBounds(exportFramePlan, supersampling),
       height,
-      structureMetadata: structureRasterMetadata({
-        camera: state.camera,
-        cameraPose,
-        exportFramePlan,
-        groupPosition: layout.groupPosition,
-        height,
-        scene,
-        supersampling,
-        width,
-      }),
+      structureMetadata,
+      trainingPasses,
       width,
     };
   } finally {
@@ -324,6 +409,9 @@ export function structureRasterMetadata({
   supersampling: number;
   width: number;
 }): StructureRasterMetadata {
+  if (!(camera instanceof OrthographicCamera)) {
+    throw new Error("Structure raster metadata requires an orthographic camera.");
+  }
   camera.updateMatrixWorld(true);
   const position = camera.position.toArray() as [number, number, number];
   const up = camera.up.toArray() as [number, number, number];
@@ -364,6 +452,8 @@ export function structureRasterMetadata({
       projectionMatrix: matrixRows(camera.projectionMatrix),
       quaternion,
       target: cameraPose.target,
+      far: camera.far,
+      near: camera.near,
       up,
       viewMatrix: matrixRows(camera.matrixWorldInverse),
       width,

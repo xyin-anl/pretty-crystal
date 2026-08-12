@@ -24,6 +24,7 @@ export async function renderExportRaster({
   style,
   unitCellLineStyle,
   visibleScene,
+  trainingOutputs,
 }: {
   cameraPose: CameraPoseSnapshot;
   componentOpacity: ComponentOpacityState;
@@ -33,6 +34,7 @@ export async function renderExportRaster({
   style: StyleState;
   unitCellLineStyle: UnitCellLineStyle;
   visibleScene: SceneSpec;
+  trainingOutputs?: readonly ("atom_instances" | "depth")[];
 }): Promise<RasterExportImage> {
   const { renderStructureRasterImage } = await import("../scene/exportRenderer");
 
@@ -53,5 +55,6 @@ export async function renderExportRaster({
       settings.background === "black" ? DARK_BACKGROUND_UNIT_CELL_LINE_COLOR : undefined,
     unitCellLineStyle,
     width: settings.width,
+    trainingOutputs,
   });
 }

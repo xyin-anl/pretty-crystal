@@ -17,6 +17,7 @@ Regenerate goldens after an intentional rendering change:
 from __future__ import annotations
 
 import os
+from io import BytesIO
 from pathlib import Path
 
 import pytest
@@ -89,3 +90,78 @@ def test_rendered_figure_matches_golden(
         f"missing golden {golden_path}; run PRC_UPDATE_GOLDENS=1 uv run pytest -m visual"
     )
     _compare_images(rendered_path, golden_path)
+
+
+@pytest.mark.visual
+def test_training_supervision_passes_align_with_camera() -> None:
+    import numpy as np
+    from PIL import Image
+
+    from pretty_crystal import render_training_sample
+
+    sample = render_training_sample(
+        FIXTURES / "SrTiO3.cif",
+        structure_id="structure-" + "a" * 64,
+        canonical_structure_hash="a" * 64,
+        seed=42,
+        style={
+            "style": {"atomRadius": 40, "fogEnabled": False},
+            "componentVisibility": {
+                "atoms": True,
+                "bonds": True,
+                "unitCell": True,
+                "polyhedra": False,
+                "boundaryAtoms": True,
+                "oneHopBondedAtoms": False,
+            },
+            "export": {
+                "width": 128,
+                "height": 128,
+                "format": "png",
+                "background": "white",
+                "supersampling": 1,
+                "meshQuality": "low",
+            },
+        },
+        bond_algorithm="crystal-nn",
+        outputs=("rgb", "atom_instances", "depth", "metadata"),
+    )
+
+    assert sample.atom_instances is not None
+    assert sample.depth is not None
+    mask = np.asarray(
+        Image.open(BytesIO(sample.atom_instances.data)).convert("RGB"), dtype=np.uint32
+    )
+    instance_ids = mask[:, :, 0] + (mask[:, :, 1] << 8) + (mask[:, :, 2] << 16)
+    declared_ids = {atom["instance"]["instanceId"] for atom in sample.annotations["atoms"]}
+    actual_ids = set(np.unique(instance_ids)) - {0}
+
+    assert actual_ids
+    assert actual_ids <= declared_ids
+    assert sample.depth.shape == (128, 128)
+    assert sample.depth.dtype == np.float32
+    assert np.isfinite(sample.depth).all()
+    assert np.any(sample.depth < 1)
+    assert np.any(sample.depth == 1)
+
+    depth_metadata = sample.annotations["training"]["depth"]
+    near = depth_metadata["near"]
+    far = depth_metadata["far"]
+    zoom = sample.annotations["frame"]["zoom"]
+    radius_errors = []
+    for atom in sample.annotations["atoms"]:
+        x = int(round(atom["xy"][0]))
+        y = int(round(atom["xy"][1]))
+        instance = atom["instance"]
+        if not (0 <= x < 128 and 0 <= y < 128):
+            continue
+        if instance_ids[y, x] != instance["instanceId"]:
+            continue
+        surface_depth = near + float(sample.depth[y, x]) * (far - near)
+        radius_pixels = np.sqrt(instance["projectedFullAreaPixelsEstimate"] / np.pi)
+        expected_radius = radius_pixels / zoom
+        assert surface_depth < atom["cameraDepth"]
+        radius_errors.append(abs((atom["cameraDepth"] - surface_depth) - expected_radius))
+
+    assert radius_errors
+    assert max(radius_errors) < 0.03

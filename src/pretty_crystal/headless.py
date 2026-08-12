@@ -39,6 +39,9 @@ class RenderedFigureFile:
 @dataclass(frozen=True)
 class RenderedTrainingSample:
     rgb: RenderedFigureFile
+    atom_instances: RenderedFigureFile | None
+    depth: bytes | None
+    depth_shape: tuple[int, int] | None
     annotations: dict[str, Any]
     renderer_protocol_version: int
 
@@ -158,6 +161,7 @@ class HeadlessFigureRenderer:
         *,
         file_name: str | None = None,
         settings: dict[str, Any] | None = None,
+        outputs: tuple[str, ...] = (),
     ) -> RenderedTrainingSample:
         """Render RGB plus exact camera and projected-atom annotations."""
         if self._page is None:
@@ -168,6 +172,8 @@ class HeadlessFigureRenderer:
             payload["fileName"] = file_name
         if settings:
             payload["settings"] = settings
+        if outputs:
+            payload["outputs"] = list(outputs)
 
         try:
             result = self._page.evaluate(
@@ -195,8 +201,13 @@ class HeadlessFigureRenderer:
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise HeadlessRenderError("The training renderer returned invalid RGB data.") from exc
+        atom_instances = _decode_optional_rendered_file(result.get("atomInstances"))
+        depth, depth_shape = _decode_optional_depth(result.get("depth"))
         return RenderedTrainingSample(
             rgb=rendered_rgb,
+            atom_instances=atom_instances,
+            depth=depth,
+            depth_shape=depth_shape,
             annotations=annotations,
             renderer_protocol_version=protocol_version,
         )
@@ -300,6 +311,46 @@ class HeadlessFigureRenderer:
                 self._server_thread.join(timeout=5)
             self._server = None
             self._server_thread = None
+
+
+def _decode_optional_rendered_file(data: object) -> RenderedFigureFile | None:
+    if data is None:
+        return None
+    if not isinstance(data, dict):
+        raise HeadlessRenderError("The training renderer returned invalid image-pass data.")
+    try:
+        return RenderedFigureFile(
+            data=base64.b64decode(data["dataBase64"], validate=True),
+            file_name=str(data["fileName"]),
+            format=str(data["format"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HeadlessRenderError(
+            "The training renderer returned invalid image-pass data."
+        ) from exc
+
+
+def _decode_optional_depth(data: object) -> tuple[bytes | None, tuple[int, int] | None]:
+    if data is None:
+        return None, None
+    if not isinstance(data, dict):
+        raise HeadlessRenderError("The training renderer returned invalid depth data.")
+    try:
+        shape = data["shape"]
+        if (
+            data["transferDtype"] != "float32"
+            or data["transferByteOrder"] != "little-endian"
+            or not isinstance(shape, list)
+            or len(shape) != 2
+        ):
+            raise ValueError
+        parsed_shape = (int(shape[0]), int(shape[1]))
+        raw = base64.b64decode(data["dataBase64"], validate=True)
+        if len(raw) != parsed_shape[0] * parsed_shape[1] * 4:
+            raise ValueError
+        return raw, parsed_shape
+    except (KeyError, TypeError, ValueError) as exc:
+        raise HeadlessRenderError("The training renderer returned invalid depth data.") from exc
 
 
 def _bound_server_port(server: uvicorn.Server) -> int:

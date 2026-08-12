@@ -4,6 +4,11 @@ import { OrthographicCamera } from "three";
 import type { SceneSpec } from "../src/api/scene";
 import { createCameraPoseSnapshot } from "../src/scene/cameraPose";
 import { structureRasterMetadata } from "../src/scene/exportRenderer";
+import {
+  instanceIdColor,
+  instanceIdFromColor,
+  unpackRgbaDepth,
+} from "../src/scene/trainingPasses";
 
 describe("training render annotations", () => {
   test("projects atom centers with exact camera matrices", () => {
@@ -34,6 +39,8 @@ describe("training render annotations", () => {
     });
 
     expect(metadata.camera.matrixLayout).toBe("row-major");
+    expect(metadata.camera.near).toBe(0.1);
+    expect(metadata.camera.far).toBe(10);
     expect(metadata.camera.projectionMatrix).toHaveLength(4);
     expect(metadata.camera.viewMatrix).toHaveLength(4);
     expect(metadata.frame.groupPosition).toEqual([0, 0, 0]);
@@ -42,6 +49,18 @@ describe("training render annotations", () => {
     expect(metadata.atoms[0]?.xy[1]).toBeCloseTo(50, 8);
     expect(metadata.atoms[0]?.cameraDepth).toBeCloseTo(5, 8);
     expect(metadata.atoms[0]?.withinFrame).toBe(true);
+  });
+
+  test("round-trips little-endian RGB24 atom instance IDs", () => {
+    for (const instanceId of [1, 255, 256, 65_535, 65_536, 0xffffff]) {
+      const color = instanceIdColor(instanceId);
+      expect(instanceIdFromColor(...color)).toBe(instanceId);
+    }
+  });
+
+  test("decodes the depth-pass background as normalized depth one", () => {
+    expect(unpackRgbaDepth(255, 255, 255, 255)).toBeCloseTo(1, 8);
+    expect(unpackRgbaDepth(0, 0, 0, 0)).toBe(0);
   });
 
   test("reports final-pixel frame values after supersampling", () => {

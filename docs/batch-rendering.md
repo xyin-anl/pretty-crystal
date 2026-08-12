@@ -163,6 +163,8 @@ exit (or explicitly with `pretty_crystal.close_renderer()`).
 Supervised dataset generation uses a separate, versioned public interface:
 
 ```python
+import numpy as np
+
 from pretty_crystal import render_training_sample
 
 sample = render_training_sample(
@@ -173,23 +175,41 @@ sample = render_training_sample(
     width=512,
     height=512,
     background="white",
+    outputs=("rgb", "atom_instances", "depth", "metadata"),
 )
 
 sample.rgb.save("SrTiO3.png")
+sample.atom_instances.save("SrTiO3.atoms.png")
+np.save("SrTiO3.depth.npy", sample.depth.astype(np.float16))
 metadata = sample.metadata()
 ```
 
-Protocol version 1 returns RGB bytes; exact orthographic camera matrices and
-pose; projected atom centers in final-image pixels; camera-space and clip-space
-center depths; source site indices and periodic offsets; display bonds and
-polyhedra; the renderer scene and scene-group translation; and resolved request
-settings. Matrices are row-major.
+Protocol version 2 returns RGB bytes; an optional atom-instance PNG; an optional
+depth array; exact orthographic camera matrices and pose; projected atom centers
+in final-image pixels; camera-space and clip-space center depths; source site
+indices and periodic offsets; display bonds and polyhedra; the renderer scene
+and scene-group translation; and resolved request settings. Matrices are
+row-major. The supervision passes use the same camera, framing, resolution, and
+visible mesh geometry as RGB.
 
 `withinFrame` means that an atom center is inside the camera frustum. It is not
-an occlusion label. Exact visibility and occlusion fractions require the future
-atom-instance pass and are deliberately absent rather than approximated.
-Requests for `atom_instances` or `depth` currently fail with
-`NotImplementedError`.
+an occlusion label. The instance mask uses background ID zero and little-endian
+RGB24 IDs, so `instance_id = red + 256 * green + 65536 * blue`. It is rendered
+without antialiasing, lighting, fog, transparency, or blending. Other visible
+mesh surfaces act as opaque depth occluders. Screen-space line primitives, such
+as the unit-cell frame, are explicitly excluded because their rasterized width
+does not define a stable three-dimensional surface. Per-atom metadata records
+the mask color, inclusive pixel bounding box, visible pixel count, and an
+occlusion estimate relative to the portion of the projected full-circle area
+inside the image. The unclipped and in-frame area estimates are both recorded.
+
+Depth values are returned as a `float32` array in normalized orthographic
+device-depth coordinates: zero is the near plane and one is the far plane or
+background. Convert a foreground value `d` to positive camera depth with
+`near + d * (far - near)`. The pass stores the nearest opaque visible mesh
+surface and excludes screen-space lines. Callers may store the array as
+`float16`; the metadata records the little-endian transfer byte order, transfer
+dtype, and intended storage dtype.
 
 The metadata contract lives in
 `src/pretty_crystal/training_protocol.schema.json`. Pretty Crystal treats the

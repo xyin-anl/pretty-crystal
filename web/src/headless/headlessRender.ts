@@ -63,7 +63,14 @@ export interface HeadlessRenderResult {
 
 export interface HeadlessTrainingSampleResult {
   annotations: StructureRasterMetadata;
-  rendererProtocolVersion: 1;
+  atomInstances?: HeadlessRenderedFile;
+  depth?: {
+    dataBase64: string;
+    shape: [number, number];
+    transferDtype: "float32";
+    transferByteOrder: "little-endian";
+  };
+  rendererProtocolVersion: 2;
   rgb: HeadlessRenderedFile;
 }
 
@@ -80,6 +87,7 @@ interface HeadlessRenderInputs {
   showCrystalAxisLabels: boolean;
   style: StyleState;
   unitCellLineStyle: UnitCellLineStyle;
+  trainingOutputs: ("atom_instances" | "depth")[];
 }
 
 export interface HeadlessAnimationResult {
@@ -198,6 +206,13 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   if (!visibleScene) {
     throw new Error("No structure is available to render.");
   }
+  if (
+    inputs.trainingOutputs.includes("atom_instances") &&
+    (!inputs.componentVisibility.atoms || inputs.componentOpacity.atoms <= 0)
+  ) {
+    throw new Error("Atom-instance output requires visible atoms with positive opacity.");
+  }
+  validateTrainingPassOpacity(inputs, visibleScene);
   const cameraQuaternion = resolveCameraQuaternion(inputs);
   const raster = await rejectOnWindowError(
     renderExportRaster({
@@ -209,6 +224,7 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
       style: inputs.style,
       unitCellLineStyle: inputs.unitCellLineStyle,
       visibleScene,
+      trainingOutputs: inputs.trainingOutputs,
     }),
   );
   if (!raster.structureMetadata) {
@@ -216,15 +232,85 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   }
 
   const format = inputs.exportSettings.format;
+  const atomInstances = raster.trainingPasses?.atomInstances;
+  const depth = raster.trainingPasses?.depth;
   return {
     annotations: raster.structureMetadata,
-    rendererProtocolVersion: 1,
+    ...(atomInstances
+      ? {
+          atomInstances: {
+            dataBase64: await blobToBase64(atomInstances.blob),
+            fileName: `${exportFileStem(inputs.fileName)}.atoms.png`,
+            format: "png",
+          },
+        }
+      : {}),
+    ...(depth
+      ? {
+          depth: {
+            dataBase64: await blobToBase64(
+              new Blob([copyFloat32Bytes(depth.data)]),
+            ),
+            shape: depth.shape,
+            transferDtype: depth.transferDtype,
+            transferByteOrder: depth.transferByteOrder,
+          },
+        }
+      : {}),
+    rendererProtocolVersion: 2,
     rgb: {
       dataBase64: await blobToBase64(raster.blob),
       fileName: `${exportFileStem(inputs.fileName)}.${format}`,
       format,
     },
   };
+}
+
+function validateTrainingPassOpacity(
+  inputs: HeadlessRenderInputs,
+  visibleScene: SceneSpec,
+) {
+  if (inputs.trainingOutputs.length === 0) {
+    return;
+  }
+  const nonOpaqueComponents = [
+    inputs.componentVisibility.atoms &&
+    visibleScene.atoms.length > 0 &&
+    inputs.componentOpacity.atoms !== 100
+      ? "atoms"
+      : null,
+    inputs.componentVisibility.bonds &&
+    visibleScene.bonds.length > 0 &&
+    inputs.componentOpacity.bonds !== 100
+      ? "bonds"
+      : null,
+    inputs.componentVisibility.polyhedra &&
+    visibleScene.polyhedra.length > 0 &&
+    inputs.componentOpacity.polyhedra !== 100
+      ? "polyhedra"
+      : null,
+  ].filter((component): component is string => component !== null);
+  if (nonOpaqueComponents.length > 0) {
+    throw new Error(
+      "Training supervision passes require fully opaque mesh components; " +
+        `non-opaque: ${nonOpaqueComponents.join(", ")}.`,
+    );
+  }
+  if (inputs.style.latticePlane !== null) {
+    throw new Error("Training supervision passes do not support translucent lattice planes.");
+  }
+  if (inputs.style.asuHighlight && inputs.style.asuGhostOpacity !== 100) {
+    throw new Error("Training supervision passes require opaque ASU context atoms.");
+  }
+}
+
+function copyFloat32Bytes(data: Float32Array): ArrayBuffer {
+  const copied = new ArrayBuffer(data.byteLength);
+  const view = new DataView(copied);
+  for (let index = 0; index < data.length; index += 1) {
+    view.setFloat32(index * 4, data[index] ?? 1, true);
+  }
+  return copied;
 }
 
 async function renderStructureAnimation(
@@ -329,7 +415,7 @@ function resolveCameraQuaternion(inputs: HeadlessRenderInputs): Quaternion {
 
 export function parseHeadlessRenderPayload(payload: unknown): HeadlessRenderInputs {
   const root = expectRecord(payload, "payload");
-  assertKnownKeys(root, "payload", ["fileName", "scene", "settings"]);
+  assertKnownKeys(root, "payload", ["fileName", "outputs", "scene", "settings"]);
 
   const scene = expectScene(root.scene);
   const fileName =
@@ -385,7 +471,21 @@ export function parseHeadlessRenderPayload(payload: unknown): HeadlessRenderInpu
             UNIT_CELL_LINE_STYLES,
             "payload.settings.unitCellLineStyle",
           ),
+    trainingOutputs: parseTrainingOutputs(root.outputs),
   };
+}
+
+function parseTrainingOutputs(data: unknown): ("atom_instances" | "depth")[] {
+  if (data === undefined || data === null) {
+    return [];
+  }
+  if (!Array.isArray(data)) {
+    throw new Error("payload.outputs must be an array.");
+  }
+  const supported = ["atom_instances", "depth"] as const;
+  return data.map((value, index) =>
+    expectOneOf(value, supported, `payload.outputs[${index}]`),
+  );
 }
 
 function expectScene(data: unknown): SceneSpec {
