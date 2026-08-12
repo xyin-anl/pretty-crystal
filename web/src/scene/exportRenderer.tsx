@@ -1,6 +1,7 @@
 import { createRoot, type RootState } from "@react-three/fiber";
 import { useLayoutEffect } from "react";
-import { Quaternion, Vector3 } from "three";
+import type { Camera } from "three";
+import { Matrix4, Quaternion, Vector3 } from "three";
 
 import type { SceneSpec } from "../api/scene";
 import type {
@@ -48,8 +49,47 @@ export interface RasterExportImage {
   blob: Blob;
   contentBounds?: RasterExportBounds;
   height: number;
+  structureMetadata?: StructureRasterMetadata;
   textItems?: RasterExportTextItem[];
   width: number;
+}
+
+export interface StructureRasterMetadata {
+  atoms: ProjectedAtomAnnotation[];
+  camera: StructureRasterCameraMetadata;
+  displayBonds: SceneSpec["bonds"];
+  frame: {
+    centerX: number;
+    centerY: number;
+    supersampling: number;
+    zoom: number;
+  };
+  polyhedra: SceneSpec["polyhedra"];
+}
+
+export interface StructureRasterCameraMetadata {
+  height: number;
+  matrixLayout: "row-major";
+  position: [number, number, number];
+  projection: "orthographic";
+  projectionMatrix: number[][];
+  quaternion: [number, number, number, number];
+  target: [number, number, number];
+  up: [number, number, number];
+  viewMatrix: number[][];
+  width: number;
+}
+
+export interface ProjectedAtomAnnotation {
+  cameraDepth: number;
+  clipDepth: number;
+  element: string;
+  imageOffset: [number, number, number];
+  renderAtomId: string;
+  siteId: string;
+  siteIndex: number;
+  withinFrame: boolean;
+  xy: [number, number];
 }
 
 export type RasterExportImageFormat = "jpg" | "png";
@@ -246,12 +286,103 @@ export async function renderStructureRasterImage({
       blob,
       contentBounds: structureFrameContentBounds(exportFramePlan, supersampling),
       height,
+      structureMetadata: structureRasterMetadata({
+        camera: state.camera,
+        cameraPose,
+        exportFramePlan,
+        groupPosition: layout.groupPosition,
+        height,
+        scene,
+        supersampling,
+        width,
+      }),
       width,
     };
   } finally {
     root.unmount();
     canvas.remove();
   }
+}
+
+export function structureRasterMetadata({
+  camera,
+  cameraPose,
+  exportFramePlan,
+  groupPosition,
+  height,
+  scene,
+  supersampling,
+  width,
+}: {
+  camera: Camera;
+  cameraPose: CameraPoseSnapshot;
+  exportFramePlan: StructureExportFramePlan;
+  groupPosition: [number, number, number];
+  height: number;
+  scene: SceneSpec;
+  supersampling: number;
+  width: number;
+}): StructureRasterMetadata {
+  camera.updateMatrixWorld(true);
+  const position = camera.position.toArray() as [number, number, number];
+  const up = camera.up.toArray() as [number, number, number];
+  const quaternion = camera.quaternion.toArray() as [number, number, number, number];
+  const groupOffset = new Vector3(...groupPosition);
+  const atoms = scene.atoms.map((atom): ProjectedAtomAnnotation => {
+    const worldPosition = new Vector3(...atom.position).add(groupOffset);
+    const cameraPosition = worldPosition.clone().applyMatrix4(camera.matrixWorldInverse);
+    const clipPosition = worldPosition.clone().project(camera);
+    const x = ((clipPosition.x + 1) / 2) * width;
+    const y = ((1 - clipPosition.y) / 2) * height;
+    return {
+      cameraDepth: -cameraPosition.z,
+      clipDepth: clipPosition.z,
+      element: atom.element,
+      imageOffset: atom.imageOffset,
+      renderAtomId: atom.id,
+      siteId: atom.siteId,
+      siteIndex: atom.siteIndex,
+      withinFrame:
+        x >= 0 &&
+        x < width &&
+        y >= 0 &&
+        y < height &&
+        clipPosition.z >= -1 &&
+        clipPosition.z <= 1,
+      xy: [x, y],
+    };
+  });
+
+  return {
+    atoms,
+    camera: {
+      height,
+      matrixLayout: "row-major",
+      position,
+      projection: "orthographic",
+      projectionMatrix: matrixRows(camera.projectionMatrix),
+      quaternion,
+      target: cameraPose.target,
+      up,
+      viewMatrix: matrixRows(camera.matrixWorldInverse),
+      width,
+    },
+    displayBonds: scene.bonds,
+    frame: {
+      centerX: exportFramePlan.centerX / supersampling,
+      centerY: exportFramePlan.centerY / supersampling,
+      supersampling,
+      zoom: exportFramePlan.zoom / supersampling,
+    },
+    polyhedra: scene.polyhedra,
+  };
+}
+
+function matrixRows(matrix: Matrix4): number[][] {
+  const elements = matrix.elements;
+  return Array.from({ length: 4 }, (_, row) =>
+    Array.from({ length: 4 }, (_, column) => elements[column * 4 + row] ?? 0),
+  );
 }
 
 export function structureLineWidthScale(

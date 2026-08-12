@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://pretty-crystal.local/schemas/training-protocol-1.json",
+  "title": "Pretty Crystal training sample metadata",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "renderer_protocol_version",
+    "structure_id",
+    "canonical_structure_hash",
+    "seed",
+    "scene",
+    "settings",
+    "annotations"
+  ],
+  "properties": {
+    "renderer_protocol_version": {"const": 1},
+    "structure_id": {"type": "string", "minLength": 1},
+    "canonical_structure_hash": {"type": "string", "minLength": 1},
+    "seed": {"type": "integer", "minimum": 0},
+    "scene": {"type": "object"},
+    "settings": {"type": "object"},
+    "annotations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["atoms", "camera", "displayBonds", "frame", "polyhedra"],
+      "properties": {
+        "atoms": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "cameraDepth",
+              "clipDepth",
+              "element",
+              "imageOffset",
+              "renderAtomId",
+              "siteId",
+              "siteIndex",
+              "withinFrame",
+              "xy"
+            ],
+            "properties": {
+              "cameraDepth": {"type": "number"},
+              "clipDepth": {"type": "number"},
+              "element": {"type": "string"},
+              "imageOffset": {"$ref": "#/$defs/integerVector3"},
+              "renderAtomId": {"type": "string"},
+              "siteId": {"type": "string"},
+              "siteIndex": {"type": "integer", "minimum": 0},
+              "withinFrame": {"type": "boolean"},
+              "xy": {"$ref": "#/$defs/vector2"}
+            }
+          }
+        },
+        "camera": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "height",
+            "matrixLayout",
+            "position",
+            "projection",
+            "projectionMatrix",
+            "quaternion",
+            "target",
+            "up",
+            "viewMatrix",
+            "width"
+          ],
+          "properties": {
+            "height": {"type": "integer", "minimum": 1},
+            "matrixLayout": {"const": "row-major"},
+            "position": {"$ref": "#/$defs/vector3"},
+            "projection": {"const": "orthographic"},
+            "projectionMatrix": {"$ref": "#/$defs/matrix4"},
+            "quaternion": {"$ref": "#/$defs/quaternion"},
+            "target": {"$ref": "#/$defs/vector3"},
+            "up": {"$ref": "#/$defs/vector3"},
+            "viewMatrix": {"$ref": "#/$defs/matrix4"},
+            "width": {"type": "integer", "minimum": 1}
+          }
+        },
+        "displayBonds": {"type": "array", "items": {"type": "object"}},
+        "frame": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["centerX", "centerY", "supersampling", "zoom"],
+          "properties": {
+            "centerX": {"type": "number"},
+            "centerY": {"type": "number"},
+            "supersampling": {"type": "integer", "minimum": 1},
+            "zoom": {"type": "number", "exclusiveMinimum": 0}
+          }
+        },
+        "polyhedra": {"type": "array", "items": {"type": "object"}}
+      }
+    }
+  },
+  "$defs": {
+    "vector2": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {"type": "number"}
+    },
+    "vector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "number"}
+    },
+    "integerVector3": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": {"type": "integer"}
+    },
+    "quaternion": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {"type": "number"}
+    },
+    "matrix4": {
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "items": {
+        "type": "array",
+        "minItems": 4,
+        "maxItems": 4,
+        "items": {"type": "number"}
+      }
+    }
+  }
+}

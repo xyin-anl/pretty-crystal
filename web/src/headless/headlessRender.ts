@@ -4,6 +4,9 @@ import { Quaternion } from "three";
 
 import type { SceneSpec } from "../api/scene";
 import { createFigureExportFiles } from "../app/exportFigure";
+import { exportFileStem } from "../export/fileNames";
+import { renderExportRaster } from "../export/structureRasterExport";
+import type { StructureRasterMetadata } from "../scene/exportRenderer";
 import { pxrdChartSvg, type PxrdPattern } from "../pxrd/pxrdChart";
 import {
   ANIMATION_FRAME_COUNT_MAX,
@@ -40,6 +43,7 @@ import {
   createDefaultCrystalCameraState,
 } from "../scene/crystalCamera";
 import type { CrystalCameraState } from "../scene/crystalCamera";
+import { createCameraPoseSnapshot } from "../scene/cameraPose";
 import { computeSceneStructureLayout } from "../scene/sceneLayout";
 
 const ATOM_RADIUS_MODELS = ["uniform", "atomic", "vdw", "ionic"] as const;
@@ -55,6 +59,12 @@ export interface HeadlessRenderedFile {
 
 export interface HeadlessRenderResult {
   files: HeadlessRenderedFile[];
+}
+
+export interface HeadlessTrainingSampleResult {
+  annotations: StructureRasterMetadata;
+  rendererProtocolVersion: 1;
+  rgb: HeadlessRenderedFile;
 }
 
 interface HeadlessRenderInputs {
@@ -84,6 +94,7 @@ declare global {
       renderPxrdChart: (payload: unknown) => string;
       renderStructureAnimation: (payload: unknown) => Promise<HeadlessAnimationResult>;
       renderStructureImage: (payload: unknown) => Promise<HeadlessRenderResult>;
+      renderTrainingSample: (payload: unknown) => Promise<HeadlessTrainingSampleResult>;
       version: 1;
     };
   }
@@ -98,6 +109,7 @@ export function installHeadlessRenderBridge() {
     renderPxrdChart,
     renderStructureAnimation,
     renderStructureImage,
+    renderTrainingSample,
     version: 1,
   };
 }
@@ -173,6 +185,45 @@ async function renderStructureImage(payload: unknown): Promise<HeadlessRenderRes
         format: file.format,
       })),
     ),
+  };
+}
+
+async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingSampleResult> {
+  const inputs = parseHeadlessRenderPayload(payload);
+  if (inputs.exportSettings.format === "pdf") {
+    throw new Error("Training samples require payload.settings.export.format to be png or jpg.");
+  }
+
+  const visibleScene = visibleSceneForComponents(inputs.scene, inputs.componentVisibility);
+  if (!visibleScene) {
+    throw new Error("No structure is available to render.");
+  }
+  const cameraQuaternion = resolveCameraQuaternion(inputs);
+  const raster = await rejectOnWindowError(
+    renderExportRaster({
+      cameraPose: createCameraPoseSnapshot(cameraQuaternion),
+      componentOpacity: inputs.componentOpacity,
+      componentVisibility: inputs.componentVisibility,
+      lightStrength: inputs.lightStrength,
+      settings: inputs.exportSettings,
+      style: inputs.style,
+      unitCellLineStyle: inputs.unitCellLineStyle,
+      visibleScene,
+    }),
+  );
+  if (!raster.structureMetadata) {
+    throw new Error("The renderer did not return structure annotations.");
+  }
+
+  const format = inputs.exportSettings.format;
+  return {
+    annotations: raster.structureMetadata,
+    rendererProtocolVersion: 1,
+    rgb: {
+      dataBase64: await blobToBase64(raster.blob),
+      fileName: `${exportFileStem(inputs.fileName)}.${format}`,
+      format,
+    },
   };
 }
 

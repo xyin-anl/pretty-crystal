@@ -80,6 +80,10 @@ Batch output uses the same rendering pipeline as the GUI, so figures come out
 pixel-identical to interactive exports. See
 [docs/batch-rendering.md](docs/batch-rendering.md) for the style-file reference.
 
+For supervised datasets, the public `render_training_sample` API additionally
+returns exact camera matrices and projected atom annotations. See
+[docs/batch-rendering.md](docs/batch-rendering.md#dataset-rendering-api).
+
 ## Examples
 
 ### Material presets

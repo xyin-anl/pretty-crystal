@@ -158,6 +158,45 @@ chart.save("LiFePO4-pxrd.svg")
 headless browser session starts on first use and is closed automatically at
 exit (or explicitly with `pretty_crystal.close_renderer()`).
 
+## Dataset rendering API
+
+Supervised dataset generation uses a separate, versioned public interface:
+
+```python
+from pretty_crystal import render_training_sample
+
+sample = render_training_sample(
+    "SrTiO3.cif",
+    structure_id="structure-...",
+    canonical_structure_hash="...",
+    seed=42,
+    width=512,
+    height=512,
+    background="white",
+)
+
+sample.rgb.save("SrTiO3.png")
+metadata = sample.metadata()
+```
+
+Protocol version 1 returns RGB bytes; exact orthographic camera matrices and
+pose; projected atom centers in final-image pixels; camera-space and clip-space
+center depths; source site indices and periodic offsets; display bonds and
+polyhedra; the renderer scene; and resolved request settings. Matrices are
+row-major.
+
+`withinFrame` means that an atom center is inside the camera frustum. It is not
+an occlusion label. Exact visibility and occlusion fractions require the future
+atom-instance pass and are deliberately absent rather than approximated.
+Requests for `atom_instances` or `depth` currently fail with
+`NotImplementedError`.
+
+The metadata contract lives in
+`src/pretty_crystal/training_protocol.schema.json`. Pretty Crystal treats the
+caller-supplied structure identity, canonical hash, and seed as opaque
+provenance; corpus identity and dataset storage remain the caller's
+responsibility.
+
 ## How it works
 
 `prc render` starts the local Pretty Crystal server, opens the bundled web app in

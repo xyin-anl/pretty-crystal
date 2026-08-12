@@ -19,8 +19,7 @@ PLAYWRIGHT_INSTALL_HINT = (
     "  playwright install chromium"
 )
 FRONTEND_MISSING_HINT = (
-    "The bundled web renderer was not found. Build the frontend first:\n"
-    "  cd web && bun run build"
+    "The bundled web renderer was not found. Build the frontend first:\n  cd web && bun run build"
 )
 SERVER_STARTUP_TIMEOUT_SECONDS = 30.0
 BRIDGE_READY_TIMEOUT_MS = 30_000
@@ -35,6 +34,13 @@ class RenderedFigureFile:
     data: bytes
     file_name: str
     format: str
+
+
+@dataclass(frozen=True)
+class RenderedTrainingSample:
+    rgb: RenderedFigureFile
+    annotations: dict[str, Any]
+    renderer_protocol_version: int
 
 
 class HeadlessFigureRenderer:
@@ -144,6 +150,55 @@ class HeadlessFigureRenderer:
             [base64.b64decode(frame) for frame in frames],
             int(result["width"]),
             int(result["height"]),
+        )
+
+    def render_training_sample(
+        self,
+        scene: dict[str, Any],
+        *,
+        file_name: str | None = None,
+        settings: dict[str, Any] | None = None,
+    ) -> RenderedTrainingSample:
+        """Render RGB plus exact camera and projected-atom annotations."""
+        if self._page is None:
+            raise HeadlessRenderError("The headless renderer is not running.")
+
+        payload: dict[str, Any] = {"scene": scene}
+        if file_name is not None:
+            payload["fileName"] = file_name
+        if settings:
+            payload["settings"] = settings
+
+        try:
+            result = self._page.evaluate(
+                "(payload) => window.__prettyCrystalHeadless.renderTrainingSample(payload)",
+                payload,
+            )
+        except Exception as exc:
+            raise HeadlessRenderError(_browser_error_message(exc)) from exc
+
+        if not isinstance(result, dict):
+            raise HeadlessRenderError("The headless renderer returned an unexpected result.")
+        rgb = result.get("rgb")
+        annotations = result.get("annotations")
+        protocol_version = result.get("rendererProtocolVersion")
+        if not isinstance(rgb, dict) or not isinstance(annotations, dict):
+            raise HeadlessRenderError("The training renderer returned incomplete sample data.")
+        if not isinstance(protocol_version, int) or protocol_version < 1:
+            raise HeadlessRenderError("The training renderer returned an invalid protocol version.")
+
+        try:
+            rendered_rgb = RenderedFigureFile(
+                data=base64.b64decode(rgb["dataBase64"], validate=True),
+                file_name=str(rgb["fileName"]),
+                format=str(rgb["format"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HeadlessRenderError("The training renderer returned invalid RGB data.") from exc
+        return RenderedTrainingSample(
+            rgb=rendered_rgb,
+            annotations=annotations,
+            renderer_protocol_version=protocol_version,
         )
 
     def render_pxrd_chart(
