@@ -30,9 +30,6 @@ def main() -> None:
     run(["uv", "build", "--out-dir", str(dist_dir), "--clear"], cwd=PROJECT_ROOT)
     wheel_path = newest_wheel(dist_dir)
     verify_wheel_static_assets(wheel_path)
-    if not args.keep_web_static:
-        clean_web_static()
-
     print()
     print(f"Built release artifacts in {dist_dir}:")
     for artifact in sorted(dist_dir.iterdir()):
@@ -58,11 +55,6 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Skip `bun install --frozen-lockfile` before building the frontend.",
     )
-    parser.add_argument(
-        "--keep-web-static",
-        action="store_true",
-        help="Keep generated files in src/pretty_crystal/web_static after a successful build.",
-    )
     return parser.parse_args()
 
 
@@ -80,9 +72,7 @@ def copy_web_dist() -> None:
     index_file = WEB_DIST / "index.html"
     assets_dir = WEB_DIST / "assets"
     if not index_file.is_file() or not assets_dir.is_dir():
-        raise SystemExit(
-            "Frontend build did not produce web/dist/index.html and web/dist/assets/."
-        )
+        raise SystemExit("Frontend build did not produce web/dist/index.html and web/dist/assets/.")
 
     if STATIC_ROOT.exists():
         shutil.rmtree(STATIC_ROOT)
@@ -99,13 +89,6 @@ def copy_web_dist() -> None:
         f"Copied {WEB_DIST.relative_to(PROJECT_ROOT)} to {STATIC_ROOT.relative_to(PROJECT_ROOT)}",
         flush=True,
     )
-
-
-def clean_web_static() -> None:
-    if STATIC_ROOT.exists():
-        shutil.rmtree(STATIC_ROOT)
-    STATIC_ROOT.mkdir(parents=True, exist_ok=True)
-    print(f"Cleaned generated files from {STATIC_ROOT.relative_to(PROJECT_ROOT)}", flush=True)
 
 
 def newest_wheel(dist_dir: Path) -> Path:

@@ -55,13 +55,12 @@ def _resolve_static_root(
     static_root: Path | None = None,
     dev_static_fallback: bool = True,
 ) -> Path | None:
-    candidates: list[Path] = []
     if static_root is not None:
-        candidates.append(static_root)
-
-    candidates.append(Path(str(resources.files("pretty_crystal") / "web_static")))
-    if dev_static_fallback:
-        candidates.extend(_dev_static_candidates())
+        candidates = [static_root]
+    else:
+        candidates = [Path(str(resources.files("pretty_crystal") / "web_static"))]
+        if dev_static_fallback:
+            candidates.extend(_dev_static_candidates())
 
     for candidate in candidates:
         if (candidate / "index.html").is_file():

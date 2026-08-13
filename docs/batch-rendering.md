@@ -19,8 +19,9 @@ Values below one add margin around the automatically fitted structure; values
 above one produce a tighter frame and may crop the outermost geometry. The
 effective zoom is recorded in the training annotations.
 
-The bundled web frontend must be available (it is included in release wheels; in a
-development checkout run `cd web && bun run build` first).
+The bundled web frontend is included in release wheels and Git installs. In a
+development checkout, run `cd web && bun run build` after changing frontend
+source; `scripts/build_release.py` refreshes the committed package copy.
 
 ## Usage
 
