@@ -80,6 +80,7 @@ interface HeadlessRenderInputs {
   componentVisibility: ComponentVisibilityState;
   exportSettings: ExportSettingsState;
   fileName: string | null;
+  framingScale: number;
   lightStrength: number;
   orientation: CrystalCameraState | null;
   rollDegrees: number;
@@ -168,6 +169,9 @@ function expectBooleanValue(data: unknown, path: string): boolean {
 
 async function renderStructureImage(payload: unknown): Promise<HeadlessRenderResult> {
   const inputs = parseHeadlessRenderPayload(payload);
+  if (inputs.framingScale !== 1) {
+    throw new Error("payload.settings.framing is supported only for training samples.");
+  }
   const cameraQuaternion = resolveCameraQuaternion(inputs);
 
   const files = await rejectOnWindowError(
@@ -219,6 +223,7 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
       cameraPose: createCameraPoseSnapshot(cameraQuaternion),
       componentOpacity: inputs.componentOpacity,
       componentVisibility: inputs.componentVisibility,
+      framingScale: inputs.framingScale,
       lightStrength: inputs.lightStrength,
       settings: inputs.exportSettings,
       style: inputs.style,
@@ -431,6 +436,7 @@ export function parseHeadlessRenderPayload(payload: unknown): HeadlessRenderInpu
     "componentOpacity",
     "componentVisibility",
     "export",
+    "framing",
     "lightStrength",
     "orientation",
     "showCrystalAxisLabels",
@@ -446,6 +452,7 @@ export function parseHeadlessRenderPayload(payload: unknown): HeadlessRenderInpu
     componentVisibility: parseComponentVisibility(settings.componentVisibility),
     exportSettings: parseExportSettings(settings.export),
     fileName,
+    framingScale: parseFramingScale(settings.framing),
     lightStrength:
       settings.lightStrength === undefined
         ? 1
@@ -473,6 +480,22 @@ export function parseHeadlessRenderPayload(payload: unknown): HeadlessRenderInpu
           ),
     trainingOutputs: parseTrainingOutputs(root.outputs),
   };
+}
+
+function parseFramingScale(data: unknown): number {
+  if (data === undefined || data === null) {
+    return 1;
+  }
+  const record = expectRecord(data, "payload.settings.framing");
+  assertKnownKeys(record, "payload.settings.framing", ["scale"]);
+  const scale =
+    record.scale === undefined
+      ? 1
+      : expectNumber(record.scale, "payload.settings.framing.scale");
+  if (scale <= 0) {
+    throw new Error("payload.settings.framing.scale must be positive.");
+  }
+  return scale;
 }
 
 function parseTrainingOutputs(data: unknown): ("atom_instances" | "depth")[] {

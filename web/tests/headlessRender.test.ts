@@ -14,6 +14,7 @@ describe("headless render payload", () => {
     expect(inputs.exportSettings.width).toBe(2000);
     expect(inputs.exportSettings.format).toBe("png");
     expect(inputs.exportSettings.background).toBe("transparent");
+    expect(inputs.framingScale).toBe(1);
     expect(inputs.lightStrength).toBe(1);
     expect(inputs.orientation).toBeNull();
     expect(inputs.unitCellLineStyle).toBe("solid");
@@ -32,6 +33,7 @@ describe("headless render payload", () => {
           supersampling: 4,
           width: 900,
         },
+        framing: { scale: 1.08 },
         orientation: {
           direct: [0, 1, 0],
           rollDegrees: 15,
@@ -53,6 +55,7 @@ describe("headless render payload", () => {
     expect(inputs.exportSettings.height).toBe(700);
     expect(inputs.exportSettings.format).toBe("jpg");
     expect(inputs.exportSettings.supersampling).toBe(4);
+    expect(inputs.framingScale).toBe(1.08);
     expect(inputs.orientation?.direct).toEqual([0, 1, 0]);
     expect(inputs.rollDegrees).toBe(15);
   });
@@ -82,6 +85,15 @@ describe("headless render payload", () => {
         settings: { export: { background: "plaid" } },
       }),
     ).toThrow("payload.settings.export.background must be one of");
+  });
+
+  test("rejects non-positive framing scale", () => {
+    expect(() =>
+      parseHeadlessRenderPayload({
+        scene: validScene(),
+        settings: { framing: { scale: 0 } },
+      }),
+    ).toThrow("payload.settings.framing.scale must be positive.");
   });
 
   test("rejects payloads without a scene", () => {

@@ -70,6 +70,7 @@ def test_render_training_sample_exposes_public_metadata(monkeypatch) -> None:
         width=512,
         height=512,
         background="white",
+        style={"framing": {"scale": 0.95}},
     )
 
     assert sample.rgb.data == b"rgb"
@@ -84,7 +85,8 @@ def test_render_training_sample_exposes_public_metadata(monkeypatch) -> None:
             "format": "png",
             "height": 512,
             "width": 512,
-        }
+        },
+        "framing": {"scale": 0.95},
     }
 
 

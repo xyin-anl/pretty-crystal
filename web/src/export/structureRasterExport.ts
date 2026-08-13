@@ -19,6 +19,7 @@ export async function renderExportRaster({
   cameraPose,
   componentOpacity,
   componentVisibility,
+  framingScale = 1,
   lightStrength,
   settings,
   style,
@@ -29,6 +30,7 @@ export async function renderExportRaster({
   cameraPose: CameraPoseSnapshot;
   componentOpacity: ComponentOpacityState;
   componentVisibility: ComponentVisibilityState;
+  framingScale?: number;
   lightStrength: number;
   settings: ExportSettingsState;
   style: StyleState;
@@ -42,6 +44,7 @@ export async function renderExportRaster({
     backgroundColor: exportBackgroundColor(settings.background),
     cameraPose,
     componentOpacity,
+    frameScale: framingScale,
     height: settings.height,
     imageFormat: rasterFormatForExportFormat(settings.format),
     lightStrength,

@@ -14,6 +14,11 @@ pip install 'pretty-crystal[render]'
 playwright install chromium
 ```
 
+The public training API additionally accepts `style={"framing": {"scale": s}}`.
+Values below one add margin around the automatically fitted structure; values
+above one produce a tighter frame and may crop the outermost geometry. The
+effective zoom is recorded in the training annotations.
+
 The bundled web frontend must be available (it is included in release wheels; in a
 development checkout run `cd web && bun run build` first).
 

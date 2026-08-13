@@ -136,6 +136,7 @@ export interface RenderStructureRasterOptions {
   componentOpacity: ComponentOpacityState;
   // Overrides the computed frame so animation frames share one zoom/center.
   frameOverride?: StructureExportFrameOverride;
+  frameScale?: number;
   height: number;
   imageFormat: RasterExportImageFormat;
   lightStrength: number;
@@ -177,6 +178,7 @@ export async function renderStructureRasterImage({
   cameraPose,
   componentOpacity,
   frameOverride,
+  frameScale = 1,
   height,
   imageFormat,
   lightStrength,
@@ -231,7 +233,10 @@ export async function renderStructureRasterImage({
         centerY: frameOverride.centerY,
         zoom: frameOverride.zoom,
       }
-    : computedFramePlan;
+    : {
+        ...computedFramePlan,
+        zoom: computedFramePlan.zoom * frameScale,
+      };
   const meshDetail = EXPORT_SCENE_MESH_DETAIL_PRESETS[meshQuality];
   const lineWidthScale = structureLineWidthScale(exportFramePlan, supersampling);
   const root = createRoot(canvas);
