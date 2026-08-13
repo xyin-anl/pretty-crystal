@@ -13,7 +13,9 @@ from pretty_crystal.headless import (
 )
 from pretty_crystal.training import (
     RENDERER_PROTOCOL_VERSION,
+    TrainingRenderSpec,
     render_training_sample,
+    render_training_samples,
 )
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "structures"
@@ -107,6 +109,39 @@ def test_render_training_sample_returns_requested_supervision(monkeypatch) -> No
     assert sample.depth is not None
     np.testing.assert_allclose(sample.depth, [[0.25, 1.0]])
     assert renderer.calls[0]["outputs"] == ("atom_instances", "depth")
+
+
+def test_render_training_samples_reuses_one_structure_scene(monkeypatch) -> None:
+    renderer = FakeTrainingRenderer()
+    monkeypatch.setattr("pretty_crystal.training._renderer", lambda: renderer)
+    build_calls = 0
+
+    from pretty_crystal.structures import scene_builder
+
+    original_build = scene_builder.build_scene_response
+
+    def counted_build(*args, **kwargs):
+        nonlocal build_calls
+        build_calls += 1
+        return original_build(*args, **kwargs)
+
+    monkeypatch.setattr(scene_builder, "build_scene_response", counted_build)
+    samples = render_training_samples(
+        FIXTURE_DIR / "SrTiO3.cif",
+        structure_id="structure-" + "a" * 64,
+        canonical_structure_hash="a" * 64,
+        specs=[
+            TrainingRenderSpec(seed=1, style={"framing": {"scale": 0.95}}),
+            TrainingRenderSpec(seed=2, style={"framing": {"scale": 1.05}}),
+        ],
+    )
+
+    assert build_calls == 1
+    assert len(samples) == 2
+    assert [sample.seed for sample in samples] == [1, 2]
+    assert renderer.calls[0]["scene"] is renderer.calls[1]["scene"]
+    assert renderer.calls[0]["settings"]["framing"]["scale"] == 0.95
+    assert renderer.calls[1]["settings"]["framing"]["scale"] == 1.05
 
 
 def test_render_training_sample_fails_loudly_for_unknown_pass() -> None:

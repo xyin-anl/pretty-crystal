@@ -44,6 +44,20 @@ class TrainingSample:
         }
 
 
+@dataclass(frozen=True)
+class TrainingRenderSpec:
+    """Renderer-owned settings for one view in a shared-structure batch."""
+
+    seed: int
+    style: dict[str, Any] | str | Path | None = None
+    material_preset: str | None = None
+    width: int | None = None
+    height: int | None = None
+    image_format: str | None = "png"
+    background: str | None = None
+    outputs: tuple[str, ...] = ("rgb", "metadata")
+
+
 def render_training_sample(
     structure: Structure | str | Path,
     *,
@@ -62,29 +76,50 @@ def render_training_sample(
     outputs: tuple[str, ...] = ("rgb", "metadata"),
 ) -> TrainingSample:
     """Render deterministic RGB and requested renderer-owned supervision passes."""
-    unsupported = set(outputs) - _SUPPORTED_OUTPUTS
-    if unsupported:
-        names = ", ".join(sorted(unsupported))
-        raise NotImplementedError(f"Requested training outputs are not implemented: {names}.")
-    if not outputs:
-        raise ValueError("outputs must request at least one supported output.")
+    return render_training_samples(
+        structure,
+        structure_id=structure_id,
+        canonical_structure_hash=canonical_structure_hash,
+        specs=(
+            TrainingRenderSpec(
+                seed=seed,
+                style=style,
+                material_preset=material_preset,
+                width=width,
+                height=height,
+                image_format=image_format,
+                background=background,
+                outputs=outputs,
+            ),
+        ),
+        supercell=supercell,
+        bond_algorithm=bond_algorithm,
+        file_name=file_name,
+    )[0]
+
+
+def render_training_samples(
+    structure: Structure | str | Path,
+    *,
+    structure_id: str,
+    canonical_structure_hash: str,
+    specs: tuple[TrainingRenderSpec, ...] | list[TrainingRenderSpec],
+    supercell: str | tuple[int, int, int] | None = None,
+    bond_algorithm: str | None = None,
+    file_name: str | None = None,
+) -> list[TrainingSample]:
+    """Build one structure scene and render multiple deterministic views from it."""
     if not structure_id or not canonical_structure_hash:
         raise ValueError("structure_id and canonical_structure_hash are required.")
-    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
-        raise ValueError("seed must be a non-negative integer.")
+    if not specs:
+        raise ValueError("specs must contain at least one training render request.")
+    for spec in specs:
+        _validate_spec(spec)
 
     from pretty_crystal.structures.scene_builder import build_scene_response
     from pretty_crystal.structures.schema import normalize_supercell
 
     resolved_structure, resolved_name = _resolve_structure(structure, file_name)
-    settings = _merge_settings(
-        style,
-        material_preset=material_preset,
-        width=width,
-        height=height,
-        image_format=image_format,
-        background=background,
-    )
     scene = dict(
         build_scene_response(
             resolved_structure,
@@ -92,12 +127,60 @@ def render_training_sample(
             supercell=normalize_supercell(supercell),
         )
     )
-    rendered = _renderer().render_training_sample(
-        scene,
-        file_name=resolved_name,
-        settings=settings,
-        outputs=tuple(output for output in outputs if output in {"atom_instances", "depth"}),
-    )
+    renderer = _renderer()
+    samples = []
+    for spec in specs:
+        settings = _merge_settings(
+            spec.style,
+            material_preset=spec.material_preset,
+            width=spec.width,
+            height=spec.height,
+            image_format=spec.image_format,
+            background=spec.background,
+        )
+        rendered = renderer.render_training_sample(
+            scene,
+            file_name=resolved_name,
+            settings=settings,
+            outputs=tuple(
+                output for output in spec.outputs if output in {"atom_instances", "depth"}
+            ),
+        )
+        samples.append(
+            _training_sample(
+                rendered,
+                scene=scene,
+                settings=settings,
+                structure_id=structure_id,
+                canonical_structure_hash=canonical_structure_hash,
+                seed=spec.seed,
+                outputs=spec.outputs,
+            )
+        )
+    return samples
+
+
+def _validate_spec(spec: TrainingRenderSpec) -> None:
+    unsupported = set(spec.outputs) - _SUPPORTED_OUTPUTS
+    if unsupported:
+        names = ", ".join(sorted(unsupported))
+        raise NotImplementedError(f"Requested training outputs are not implemented: {names}.")
+    if not spec.outputs:
+        raise ValueError("outputs must request at least one supported output.")
+    if isinstance(spec.seed, bool) or not isinstance(spec.seed, int) or spec.seed < 0:
+        raise ValueError("seed must be a non-negative integer.")
+
+
+def _training_sample(
+    rendered: Any,
+    *,
+    scene: dict[str, Any],
+    settings: dict[str, Any],
+    structure_id: str,
+    canonical_structure_hash: str,
+    seed: int,
+    outputs: tuple[str, ...],
+) -> TrainingSample:
     if rendered.renderer_protocol_version != RENDERER_PROTOCOL_VERSION:
         raise RuntimeError(
             "Renderer protocol mismatch: "

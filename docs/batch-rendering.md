@@ -189,6 +189,34 @@ np.save("SrTiO3.depth.npy", sample.depth.astype(np.float16))
 metadata = sample.metadata()
 ```
 
+When several views share a structure, use the batch interface so bond finding
+and scene construction run once rather than once per camera:
+
+```python
+from pretty_crystal import TrainingRenderSpec, render_training_samples
+
+samples = render_training_samples(
+    "SrTiO3.cif",
+    structure_id="structure-...",
+    canonical_structure_hash="...",
+    bond_algorithm="crystal-nn",
+    specs=[
+        TrainingRenderSpec(
+            seed=42 + view_index,
+            style={"orientation": orientation, "framing": {"scale": scale}},
+            width=512,
+            height=512,
+            background="white",
+            outputs=("rgb", "atom_instances", "depth", "metadata"),
+        )
+        for view_index, (orientation, scale) in enumerate(views)
+    ],
+)
+```
+
+Each returned `TrainingSample` has its own resolved settings, seed, image, and
+annotations. All samples in the call share the same immutable renderer scene.
+
 Protocol version 2 returns RGB bytes; an optional atom-instance PNG; an optional
 depth array; exact orthographic camera matrices and pose; projected atom centers
 in final-image pixels; camera-space and clip-space center depths; source site
