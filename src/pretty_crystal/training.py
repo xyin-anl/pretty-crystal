@@ -13,8 +13,10 @@ from pretty_crystal.figures import RenderedFigure, _merge_settings, _renderer, _
 if TYPE_CHECKING:
     from pymatgen.core import Structure
 
-RENDERER_PROTOCOL_VERSION = 2
-_SUPPORTED_OUTPUTS = frozenset({"rgb", "atom_instances", "depth", "metadata"})
+RENDERER_PROTOCOL_VERSION = 3
+_SUPPORTED_OUTPUTS = frozenset(
+    {"rgb", "atom_instances", "bond_instances", "depth", "metadata"}
+)
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,7 @@ class TrainingSample:
 
     rgb: RenderedFigure
     atom_instances: RenderedFigure | None
+    bond_instances: RenderedFigure | None
     depth: np.ndarray | None
     structure_id: str
     canonical_structure_hash: str
@@ -143,7 +146,9 @@ def render_training_samples(
             file_name=resolved_name,
             settings=settings,
             outputs=tuple(
-                output for output in spec.outputs if output in {"atom_instances", "depth"}
+                output
+                for output in spec.outputs
+                if output in {"atom_instances", "bond_instances", "depth"}
             ),
         )
         samples.append(
@@ -188,6 +193,8 @@ def _training_sample(
         )
     if "atom_instances" in outputs and rendered.atom_instances is None:
         raise RuntimeError("Renderer omitted the requested atom-instance pass.")
+    if "bond_instances" in outputs and rendered.bond_instances is None:
+        raise RuntimeError("Renderer omitted the requested bond-instance pass.")
     if "depth" in outputs and rendered.depth is None:
         raise RuntimeError("Renderer omitted the requested depth pass.")
 
@@ -208,6 +215,15 @@ def _training_sample(
                 rendered.atom_instances.format,
             )
             if rendered.atom_instances is not None
+            else None
+        ),
+        bond_instances=(
+            RenderedFigure(
+                rendered.bond_instances.data,
+                rendered.bond_instances.file_name,
+                rendered.bond_instances.format,
+            )
+            if rendered.bond_instances is not None
             else None
         ),
         depth=depth,

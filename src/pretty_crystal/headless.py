@@ -40,6 +40,7 @@ class RenderedFigureFile:
 class RenderedTrainingSample:
     rgb: RenderedFigureFile
     atom_instances: RenderedFigureFile | None
+    bond_instances: RenderedFigureFile | None
     depth: bytes | None
     depth_shape: tuple[int, int] | None
     annotations: dict[str, Any]
@@ -202,10 +203,12 @@ class HeadlessFigureRenderer:
         except (KeyError, TypeError, ValueError) as exc:
             raise HeadlessRenderError("The training renderer returned invalid RGB data.") from exc
         atom_instances = _decode_optional_rendered_file(result.get("atomInstances"))
+        bond_instances = _decode_optional_rendered_file(result.get("bondInstances"))
         depth, depth_shape = _decode_optional_depth(result.get("depth"))
         return RenderedTrainingSample(
             rgb=rendered_rgb,
             atom_instances=atom_instances,
+            bond_instances=bond_instances,
             depth=depth,
             depth_shape=depth_shape,
             annotations=annotations,

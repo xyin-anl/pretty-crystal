@@ -81,8 +81,8 @@ pixel-identical to interactive exports. See
 [docs/batch-rendering.md](docs/batch-rendering.md) for the style-file reference.
 
 For supervised datasets, the public `render_training_sample` and
-`render_training_samples` APIs additionally return exact camera matrices and
-projected atom annotations. See
+`render_training_samples` APIs additionally return exact camera matrices,
+projected atom and displayed-bond annotations, and optional instance passes. See
 [docs/batch-rendering.md](docs/batch-rendering.md#dataset-rendering-api).
 
 ## Examples

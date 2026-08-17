@@ -50,6 +50,11 @@ class FakeTrainingRenderer:
                 if "atom_instances" in outputs
                 else None
             ),
+            bond_instances=(
+                RenderedFigureFile(b"bonds", "SrTiO3.bonds.png", "png")
+                if "bond_instances" in outputs
+                else None
+            ),
             depth=depth.tobytes() if depth is not None else None,
             depth_shape=depth.shape if depth is not None else None,
             annotations={
@@ -109,6 +114,23 @@ def test_render_training_sample_returns_requested_supervision(monkeypatch) -> No
     assert sample.depth is not None
     np.testing.assert_allclose(sample.depth, [[0.25, 1.0]])
     assert renderer.calls[0]["outputs"] == ("atom_instances", "depth")
+
+
+def test_render_training_sample_returns_requested_bond_instances(monkeypatch) -> None:
+    renderer = FakeTrainingRenderer()
+    monkeypatch.setattr("pretty_crystal.training._renderer", lambda: renderer)
+
+    sample = render_training_sample(
+        FIXTURE_DIR / "SrTiO3.cif",
+        structure_id="structure-" + "a" * 64,
+        canonical_structure_hash="a" * 64,
+        seed=42,
+        outputs=("rgb", "bond_instances", "metadata"),
+    )
+
+    assert sample.bond_instances is not None
+    assert sample.bond_instances.data == b"bonds"
+    assert renderer.calls[0]["outputs"] == ("bond_instances",)
 
 
 def test_render_training_samples_reuses_one_structure_scene(monkeypatch) -> None:
@@ -172,20 +194,27 @@ def test_headless_training_bridge_decodes_protocol_result() -> None:
     renderer = HeadlessFigureRenderer()
     renderer._page = SimpleNamespace(  # type: ignore[assignment]
         evaluate=lambda _script, _payload: {
-            "rendererProtocolVersion": 2,
+            "rendererProtocolVersion": RENDERER_PROTOCOL_VERSION,
             "rgb": {
                 "dataBase64": "cmdi",
                 "fileName": "sample.png",
                 "format": "png",
             },
             "annotations": {"atoms": [], "camera": {}},
+            "bondInstances": {
+                "dataBase64": "Ym9uZHM=",
+                "fileName": "sample.bonds.png",
+                "format": "png",
+            },
         }
     )
 
     result = renderer.render_training_sample({"atoms": []})
 
-    assert result.renderer_protocol_version == 2
+    assert result.renderer_protocol_version == RENDERER_PROTOCOL_VERSION
     assert result.atom_instances is None
+    assert result.bond_instances is not None
+    assert result.bond_instances.data == b"bonds"
     assert result.depth is None
     assert result.rgb.data == b"rgb"
     assert result.rgb.file_name == "sample.png"

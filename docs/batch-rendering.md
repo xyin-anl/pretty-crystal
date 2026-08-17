@@ -181,11 +181,12 @@ sample = render_training_sample(
     width=512,
     height=512,
     background="white",
-    outputs=("rgb", "atom_instances", "depth", "metadata"),
+    outputs=("rgb", "atom_instances", "bond_instances", "depth", "metadata"),
 )
 
 sample.rgb.save("SrTiO3.png")
 sample.atom_instances.save("SrTiO3.atoms.png")
+sample.bond_instances.save("SrTiO3.bonds.png")
 np.save("SrTiO3.depth.npy", sample.depth.astype(np.float16))
 metadata = sample.metadata()
 ```
@@ -208,7 +209,7 @@ samples = render_training_samples(
             width=512,
             height=512,
             background="white",
-            outputs=("rgb", "atom_instances", "depth", "metadata"),
+            outputs=("rgb", "atom_instances", "bond_instances", "depth", "metadata"),
         )
         for view_index, (orientation, scale) in enumerate(views)
     ],
@@ -218,13 +219,13 @@ samples = render_training_samples(
 Each returned `TrainingSample` has its own resolved settings, seed, image, and
 annotations. All samples in the call share the same immutable renderer scene.
 
-Protocol version 2 returns RGB bytes; an optional atom-instance PNG; an optional
-depth array; exact orthographic camera matrices and pose; projected atom centers
-in final-image pixels; camera-space and clip-space center depths; source site
-indices and periodic offsets; display bonds and polyhedra; the renderer scene
-and scene-group translation; and resolved request settings. Matrices are
-row-major. The supervision passes use the same camera, framing, resolution, and
-visible mesh geometry as RGB.
+Protocol version 3 returns RGB bytes; optional atom-instance and displayed-bond
+instance PNGs; an optional depth array; exact orthographic camera matrices and
+pose; projected atom centers and displayed-bond endpoints in final-image pixels;
+camera-space and clip-space atom-center depths; source site indices and periodic
+offsets; polyhedra; the renderer scene and scene-group translation; and resolved
+request settings. Matrices are row-major. The supervision passes use the same
+camera, framing, resolution, and visible mesh geometry as RGB.
 
 `withinFrame` means that an atom center is inside the camera frustum. It is not
 an occlusion label. The instance mask uses background ID zero and little-endian
@@ -236,6 +237,14 @@ does not define a stable three-dimensional surface. Per-atom metadata records
 the mask color, inclusive pixel bounding box, visible pixel count, and an
 occlusion estimate relative to the portion of the projected full-circle area
 inside the image. The unclipped and in-frame area estimates are both recorded.
+
+The displayed-bond mask uses the same RGB24 encoding and records an inclusive
+pixel bounding box and visible pixel count for each rendered bond cylinder.
+Atoms, polyhedra, and other visible mesh surfaces occlude bonds in this pass;
+screen-space line decorations are excluded. Each bond annotation also records
+the two rendered atom IDs and projected endpoint coordinates. These bonds are
+renderer-owned display metadata produced by the selected bond algorithm, not a
+claim about crystallographic bonding.
 
 Depth values are returned as a `float32` array in normalized orthographic
 device-depth coordinates: zero is the near plane and one is the far plane or

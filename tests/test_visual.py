@@ -124,10 +124,11 @@ def test_training_supervision_passes_align_with_camera() -> None:
             },
         },
         bond_algorithm="crystal-nn",
-        outputs=("rgb", "atom_instances", "depth", "metadata"),
+        outputs=("rgb", "atom_instances", "bond_instances", "depth", "metadata"),
     )
 
     assert sample.atom_instances is not None
+    assert sample.bond_instances is not None
     assert sample.depth is not None
     mask = np.asarray(
         Image.open(BytesIO(sample.atom_instances.data)).convert("RGB"), dtype=np.uint32
@@ -138,6 +139,24 @@ def test_training_supervision_passes_align_with_camera() -> None:
 
     assert actual_ids
     assert actual_ids <= declared_ids
+
+    bond_mask = np.asarray(
+        Image.open(BytesIO(sample.bond_instances.data)).convert("RGB"), dtype=np.uint32
+    )
+    bond_instance_ids = (
+        bond_mask[:, :, 0] + (bond_mask[:, :, 1] << 8) + (bond_mask[:, :, 2] << 16)
+    )
+    display_bonds = sample.annotations["displayBonds"]
+    declared_bond_ids = {bond["instance"]["instanceId"] for bond in display_bonds}
+    actual_bond_ids = set(np.unique(bond_instance_ids)) - {0}
+
+    assert display_bonds
+    assert actual_bond_ids
+    assert actual_bond_ids <= declared_bond_ids
+    assert all(bond["instance"]["bondIndex"] == index for index, bond in enumerate(display_bonds))
+    atom_ids = {atom["renderAtomId"] for atom in sample.annotations["atoms"]}
+    assert all(bond["startRenderAtomId"] in atom_ids for bond in display_bonds)
+    assert all(bond["endRenderAtomId"] in atom_ids for bond in display_bonds)
     assert sample.depth.shape == (128, 128)
     assert sample.depth.dtype == np.float32
     assert np.isfinite(sample.depth).all()

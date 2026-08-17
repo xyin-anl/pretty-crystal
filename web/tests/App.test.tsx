@@ -303,7 +303,7 @@ describe("App", () => {
     });
 
     expect((await screen.findByTestId("lattice-canvas")).isConnected).toBe(true);
-    expect(screen.getByTestId("mock-orientation-gizmo").isConnected).toBe(true);
+    expect((await screen.findByTestId("mock-orientation-gizmo")).isConnected).toBe(true);
 
     const structureCard = screen.getByRole("complementary", { name: "Current structure" });
     expect(structureCard.querySelector("[data-slot='separator']")).not.toBeNull();

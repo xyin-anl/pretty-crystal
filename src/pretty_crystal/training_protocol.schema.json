@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pretty-crystal.local/schemas/training-protocol-2.json",
+  "$id": "https://pretty-crystal.local/schemas/training-protocol-3.json",
   "title": "Pretty Crystal training sample metadata",
   "type": "object",
   "additionalProperties": false,
@@ -14,7 +14,7 @@
     "annotations"
   ],
   "properties": {
-    "renderer_protocol_version": {"const": 2},
+    "renderer_protocol_version": {"const": 3},
     "structure_id": {"type": "string", "minLength": 1},
     "canonical_structure_hash": {"type": "string", "minLength": 1},
     "seed": {"type": "integer", "minimum": 0},
@@ -115,7 +115,42 @@
             "width": {"type": "integer", "minimum": 1}
           }
         },
-        "displayBonds": {"type": "array", "items": {"type": "object"}},
+        "displayBonds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "bondIndex",
+              "endAtomIndex",
+              "endRenderAtomId",
+              "endXy",
+              "startAtomIndex",
+              "startRenderAtomId",
+              "startXy",
+              "visibilityDependencies",
+              "visibilityDependencyGroups"
+            ],
+            "properties": {
+              "bondIndex": {"type": "integer", "minimum": 0},
+              "endAtomIndex": {"type": "integer", "minimum": 0},
+              "endRenderAtomId": {"type": "string"},
+              "endXy": {"$ref": "#/$defs/vector2"},
+              "startAtomIndex": {"type": "integer", "minimum": 0},
+              "startRenderAtomId": {"type": "string"},
+              "startXy": {"$ref": "#/$defs/vector2"},
+              "visibilityDependencies": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "visibilityDependencyGroups": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "string"}}
+              },
+              "instance": {"$ref": "#/$defs/bondInstance"}
+            }
+          }
+        },
         "frame": {
           "type": "object",
           "additionalProperties": false,
@@ -149,6 +184,24 @@
                 "occluderComponents": {
                   "const": "visible-mesh-geometry-excluding-screen-space-lines"
                 }
+              }
+            },
+            "bondInstances": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "backgroundId",
+                "colorEncoding",
+                "occluderComponents",
+                "targetComponent"
+              ],
+              "properties": {
+                "backgroundId": {"const": 0},
+                "colorEncoding": {"const": "rgb24-little-endian"},
+                "occluderComponents": {
+                  "const": "visible-mesh-geometry-excluding-screen-space-lines"
+                },
+                "targetComponent": {"const": "displayed-bond-meshes"}
               }
             },
             "depth": {
@@ -196,6 +249,39 @@
     }
   },
   "$defs": {
+    "bondInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bondIndex",
+        "boundingBox",
+        "instanceColor",
+        "instanceId",
+        "visiblePixelCount"
+      ],
+      "properties": {
+        "bondIndex": {"type": "integer", "minimum": 0},
+        "boundingBox": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {"type": "integer", "minimum": 0}
+            }
+          ]
+        },
+        "instanceColor": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "integer", "minimum": 0, "maximum": 255}
+        },
+        "instanceId": {"type": "integer", "minimum": 1, "maximum": 16777215},
+        "visiblePixelCount": {"type": "integer", "minimum": 0}
+      }
+    },
     "vector2": {
       "type": "array",
       "minItems": 2,

@@ -16,6 +16,7 @@ import type {
 const BOND_UP_AXIS = new Vector3(0, 1, 0);
 
 export interface BondRenderItem {
+  bondIndex: number;
   center: Vector3;
   endAtomIndex: number;
   endColor: string;
@@ -42,7 +43,7 @@ export function createBondRenderItems({
 }): BondRenderItem[] {
   const items: BondRenderItem[] = [];
 
-  for (const bond of bonds) {
+  for (const [bondIndex, bond] of bonds.entries()) {
     const startAtom = atoms[bond.startAtomIndex];
     const endAtom = atoms[bond.endAtomIndex];
     if (!startAtom || !endAtom) {
@@ -58,6 +59,7 @@ export function createBondRenderItems({
     }
 
     items.push({
+      bondIndex,
       center: start.clone().add(end).multiplyScalar(0.5),
       endAtomIndex: bond.endAtomIndex,
       endColor:

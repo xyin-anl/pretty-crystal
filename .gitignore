@@ -12,6 +12,9 @@ web/doctor.config.json
 # Generated demo output
 examples/**/*.gif
 
+# Managed run artifacts
+results/
+
 # Python
 __pycache__/
 *.py[cod]
