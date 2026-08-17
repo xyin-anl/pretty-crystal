@@ -17,6 +17,7 @@ describe("material presets", () => {
       "glossy",
       "metallic",
       "tachyon",
+      "tachyon-soft",
       "2-5d",
       "2d",
     ]);
@@ -26,6 +27,7 @@ describe("material presets", () => {
       { label: "Glossy", value: "glossy" },
       { label: "Metallic", value: "metallic" },
       { label: "Tachyon", value: "tachyon" },
+      { label: "Tachyon Soft", value: "tachyon-soft" },
       { label: "2.5D", value: "2-5d" },
       { label: "2D", value: "2d" },
     ]);
