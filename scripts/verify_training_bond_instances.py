@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import colorsys
 import json
 from collections import Counter
@@ -14,7 +15,6 @@ from PIL import Image
 from pretty_crystal import close_renderer, render_training_sample
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_DIR = Path("artifacts")
 WIDTH = 256
 HEIGHT = 256
 
@@ -76,8 +76,8 @@ def _mask_preview(instance_ids: np.ndarray) -> Image.Image:
     return Image.fromarray(preview, mode="RGB")
 
 
-def main() -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+def main(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
     try:
         sample = render_training_sample(
             ROOT / "tests" / "fixtures" / "structures" / "SrTiO3.cif",
@@ -138,18 +138,18 @@ def main() -> None:
         bond_instance_ids, [bond["instance"] for bond in bonds]
     )
 
-    sample.rgb.save(OUTPUT_DIR / "rgb.png")
-    sample.atom_instances.save(OUTPUT_DIR / "atom_instances.png")
-    sample.bond_instances.save(OUTPUT_DIR / "bond_instances.png")
-    np.save(OUTPUT_DIR / "depth.npy", sample.depth)
-    _mask_preview(atom_instance_ids).save(OUTPUT_DIR / "atom_instances_preview.png")
+    sample.rgb.save(output_dir / "rgb.png")
+    sample.atom_instances.save(output_dir / "atom_instances.png")
+    sample.bond_instances.save(output_dir / "bond_instances.png")
+    np.save(output_dir / "depth.npy", sample.depth)
+    _mask_preview(atom_instance_ids).save(output_dir / "atom_instances_preview.png")
     bond_preview = _mask_preview(bond_instance_ids)
-    bond_preview.save(OUTPUT_DIR / "bond_instances_preview.png")
+    bond_preview.save(output_dir / "bond_instances_preview.png")
     rgb = Image.open(BytesIO(sample.rgb.data)).convert("RGB")
-    Image.blend(rgb, bond_preview, alpha=0.55).save(OUTPUT_DIR / "rgb_bond_overlay.png")
+    Image.blend(rgb, bond_preview, alpha=0.55).save(output_dir / "rgb_bond_overlay.png")
 
     metadata = sample.metadata()
-    (OUTPUT_DIR / "metadata.json").write_text(
+    (output_dir / "metadata.json").write_text(
         json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     bond_pixel_counts = Counter(int(value) for value in bond_instance_ids.ravel() if value)
@@ -165,14 +165,16 @@ def main() -> None:
         "visible_bond_instances": visible_bonds,
         "width": WIDTH,
     }
-    (OUTPUT_DIR / "summary.json").write_text(
+    (output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    (OUTPUT_DIR / "smoke-valid.txt").write_text(
+    (output_dir / "smoke-valid.txt").write_text(
         "pretty-crystal training protocol smoke passed\n", encoding="utf-8"
     )
     print(json.dumps(summary, sort_keys=True))
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", type=Path, default=Path("artifacts"))
+    main(parser.parse_args().output_dir)
