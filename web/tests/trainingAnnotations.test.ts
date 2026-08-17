@@ -58,6 +58,61 @@ describe("training render annotations", () => {
     }
   });
 
+  test("projects displayed bond endpoints with stable atom identities", () => {
+    const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+
+    const scene = sceneWithAtom([-0.5, 0, 0]);
+    scene.atoms.push({
+      ...scene.atoms[0]!,
+      id: "Si-1",
+      position: [0.5, 0, 0],
+      siteId: "Si-1",
+      siteIndex: 1,
+    });
+    scene.bonds.push({
+      endAtomIndex: 1,
+      startAtomIndex: 0,
+      visibilityDependencies: [],
+      visibilityDependencyGroups: [],
+    });
+    const metadata = structureRasterMetadata({
+      camera,
+      cameraPose: createCameraPoseSnapshot(camera.quaternion),
+      exportFramePlan: {
+        aspectRatio: 1,
+        bounds: null,
+        centerX: 0,
+        centerY: 0,
+        height: 100,
+        width: 100,
+        zoom: 1,
+      },
+      groupPosition: [0, 0, 0],
+      height: 100,
+      scene,
+      supersampling: 1,
+      width: 100,
+    });
+
+    expect(metadata.displayBonds).toEqual([
+      {
+        bondIndex: 0,
+        endAtomIndex: 1,
+        endRenderAtomId: "Si-1",
+        endXy: [75, 50],
+        startAtomIndex: 0,
+        startRenderAtomId: "Si-0",
+        startXy: [25, 50],
+        visibilityDependencies: [],
+        visibilityDependencyGroups: [],
+      },
+    ]);
+  });
+
   test("decodes the depth-pass background as normalized depth one", () => {
     expect(unpackRgbaDepth(255, 255, 255, 255)).toBeCloseTo(1, 8);
     expect(unpackRgbaDepth(0, 0, 0, 0)).toBe(0);

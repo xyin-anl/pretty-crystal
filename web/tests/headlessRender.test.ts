@@ -60,6 +60,15 @@ describe("headless render payload", () => {
     expect(inputs.rollDegrees).toBe(15);
   });
 
+  test("accepts the displayed-bond instance output", () => {
+    const inputs = parseHeadlessRenderPayload({
+      outputs: ["bond_instances"],
+      scene: validScene(),
+    });
+
+    expect(inputs.trainingOutputs).toEqual(["bond_instances"]);
+  });
+
   test("rejects unknown settings keys with a precise path", () => {
     expect(() =>
       parseHeadlessRenderPayload({

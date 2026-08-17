@@ -62,7 +62,7 @@ export interface RasterExportImage {
 export interface StructureRasterMetadata {
   atoms: ProjectedAtomAnnotation[];
   camera: StructureRasterCameraMetadata;
-  displayBonds: SceneSpec["bonds"];
+  displayBonds: ProjectedDisplayBondAnnotation[];
   frame: {
     centerX: number;
     centerY: number;
@@ -74,6 +74,10 @@ export interface StructureRasterMetadata {
   training?: {
     atomInstances?: Omit<
       NonNullable<StructureTrainingPasses["atomInstances"]>,
+      "annotations" | "blob"
+    >;
+    bondInstances?: Omit<
+      NonNullable<StructureTrainingPasses["bondInstances"]>,
       "annotations" | "blob"
     >;
     depth?: Omit<NonNullable<StructureTrainingPasses["depth"]>, "data"> & {
@@ -109,6 +113,15 @@ export interface ProjectedAtomAnnotation {
   xy: [number, number];
   instance?: import("./trainingPasses").AtomInstanceAnnotation;
 }
+
+export type ProjectedDisplayBondAnnotation = SceneSpec["bonds"][number] & {
+  bondIndex: number;
+  endRenderAtomId: string;
+  endXy: [number, number];
+  instance?: import("./trainingPasses").BondInstanceAnnotation;
+  startRenderAtomId: string;
+  startXy: [number, number];
+};
 
 export type RasterExportImageFormat = "jpg" | "png";
 
@@ -149,7 +162,7 @@ export interface RenderStructureRasterOptions {
   unitCellLineColor?: string;
   unitCellLineStyle: UnitCellLineStyle;
   width: number;
-  trainingOutputs?: readonly ("atom_instances" | "depth")[];
+  trainingOutputs?: readonly ("atom_instances" | "bond_instances" | "depth")[];
 }
 
 export interface StructureExportFrameOverride {
@@ -337,6 +350,7 @@ export async function renderStructureRasterImage({
         height,
         outputs: trainingOutputs,
         projectedAtoms: structureMetadata.atoms,
+        projectedBonds: structureMetadata.displayBonds,
         renderer: state.gl,
         scene: state.scene,
         width,
@@ -353,6 +367,18 @@ export async function renderStructureRasterImage({
           instance: instancesByAtomId.get(atom.renderAtomId),
         }));
       }
+      if (trainingPasses.bondInstances) {
+        const instancesByBondIndex = new Map(
+          trainingPasses.bondInstances.annotations.map((annotation) => [
+            annotation.bondIndex,
+            annotation,
+          ]),
+        );
+        structureMetadata.displayBonds = structureMetadata.displayBonds.map((bond) => ({
+          ...bond,
+          instance: instancesByBondIndex.get(bond.bondIndex),
+        }));
+      }
       structureMetadata.training = {
         ...(trainingPasses.atomInstances
           ? {
@@ -360,6 +386,16 @@ export async function renderStructureRasterImage({
                 backgroundId: trainingPasses.atomInstances.backgroundId,
                 colorEncoding: trainingPasses.atomInstances.colorEncoding,
                 occluderComponents: trainingPasses.atomInstances.occluderComponents,
+              },
+            }
+          : {}),
+        ...(trainingPasses.bondInstances
+          ? {
+              bondInstances: {
+                backgroundId: trainingPasses.bondInstances.backgroundId,
+                colorEncoding: trainingPasses.bondInstances.colorEncoding,
+                occluderComponents: trainingPasses.bondInstances.occluderComponents,
+                targetComponent: trainingPasses.bondInstances.targetComponent,
               },
             }
           : {}),
@@ -446,6 +482,21 @@ export function structureRasterMetadata({
       xy: [x, y],
     };
   });
+  const displayBonds = scene.bonds.map((bond, bondIndex): ProjectedDisplayBondAnnotation => {
+    const startAtom = atoms[bond.startAtomIndex];
+    const endAtom = atoms[bond.endAtomIndex];
+    if (!startAtom || !endAtom) {
+      throw new Error(`Display bond ${bondIndex} references a missing rendered atom.`);
+    }
+    return {
+      ...bond,
+      bondIndex,
+      endRenderAtomId: endAtom.renderAtomId,
+      endXy: endAtom.xy,
+      startRenderAtomId: startAtom.renderAtomId,
+      startXy: startAtom.xy,
+    };
+  });
 
   return {
     atoms,
@@ -463,7 +514,7 @@ export function structureRasterMetadata({
       viewMatrix: matrixRows(camera.matrixWorldInverse),
       width,
     },
-    displayBonds: scene.bonds,
+    displayBonds,
     frame: {
       centerX: exportFramePlan.centerX / supersampling,
       centerY: exportFramePlan.centerY / supersampling,

@@ -1,4 +1,5 @@
 import {
+  BatchedMesh,
   Color,
   BufferGeometry,
   InstancedBufferAttribute,
@@ -20,7 +21,10 @@ import {
   WebGLRenderTarget,
 } from "three";
 
-import type { ProjectedAtomAnnotation } from "./exportRenderer";
+import type {
+  ProjectedAtomAnnotation,
+  ProjectedDisplayBondAnnotation,
+} from "./exportRenderer";
 
 const BACKGROUND_INSTANCE_ID = 0;
 
@@ -43,6 +47,23 @@ export interface AtomInstanceRasterPass {
   occluderComponents: "visible-mesh-geometry-excluding-screen-space-lines";
 }
 
+export interface BondInstanceAnnotation {
+  bondIndex: number;
+  boundingBox: [number, number, number, number] | null;
+  instanceColor: [number, number, number];
+  instanceId: number;
+  visiblePixelCount: number;
+}
+
+export interface BondInstanceRasterPass {
+  annotations: BondInstanceAnnotation[];
+  backgroundId: 0;
+  blob: Blob;
+  colorEncoding: "rgb24-little-endian";
+  occluderComponents: "visible-mesh-geometry-excluding-screen-space-lines";
+  targetComponent: "displayed-bond-meshes";
+}
+
 export interface DepthRasterPass {
   backgroundValue: 1;
   cameraDepthFormula: "near + depth * (far - near)";
@@ -58,6 +79,7 @@ export interface DepthRasterPass {
 
 export interface StructureTrainingPasses {
   atomInstances?: AtomInstanceRasterPass;
+  bondInstances?: BondInstanceRasterPass;
   depth?: DepthRasterPass;
 }
 
@@ -70,12 +92,14 @@ export async function renderStructureTrainingPasses({
   height,
   atomRadiusPixels,
   outputs,
+  projectedBonds,
 }: {
   atomRadiusPixels: ReadonlyMap<string, number>;
   camera: OrthographicCamera;
   height: number;
-  outputs: readonly ("atom_instances" | "depth")[];
+  outputs: readonly ("atom_instances" | "bond_instances" | "depth")[];
   projectedAtoms: readonly ProjectedAtomAnnotation[];
+  projectedBonds: readonly ProjectedDisplayBondAnnotation[];
   renderer: WebGLRenderer;
   scene: Scene;
   width: number;
@@ -92,15 +116,157 @@ export async function renderStructureTrainingPasses({
       camera,
     });
   }
+  if (outputs.includes("bond_instances")) {
+    result.bondInstances = await renderBondInstancePass({
+      camera,
+      height,
+      projectedBonds,
+      renderer,
+      scene,
+      width,
+    });
+  }
   if (outputs.includes("depth")) {
     result.depth = renderDepthPass({ camera, height, renderer, scene, width });
   }
   return result;
 }
 
+async function renderBondInstancePass({
+  camera,
+  height,
+  projectedBonds,
+  renderer,
+  scene,
+  width,
+}: {
+  camera: OrthographicCamera;
+  height: number;
+  projectedBonds: readonly ProjectedDisplayBondAnnotation[];
+  renderer: WebGLRenderer;
+  scene: Scene;
+  width: number;
+}): Promise<BondInstanceRasterPass> {
+  if (projectedBonds.length > 0xffffff) {
+    throw new Error("Bond instance masks support at most 16,777,215 displayed bonds.");
+  }
+  const restoredObjects: Array<{
+    material: Material | Material[];
+    object: MaterialObject;
+  }> = [];
+  const bondMeshes: BatchedMesh[] = [];
+  const disposableMaterials: Material[] = [];
+  const hiddenLines: Object3D[] = [];
+
+  try {
+    scene.traverse((object) => {
+      if (isScreenSpaceLine(object) && object.visible) {
+        hiddenLines.push(object);
+        object.visible = false;
+        return;
+      }
+      if (!isMaterialObject(object)) {
+        return;
+      }
+      restoredObjects.push({ material: object.material, object });
+
+      if (
+        object instanceof BatchedMesh &&
+        object.userData.prettyCrystalComponent === "bond-instances"
+      ) {
+        const displayBondIndices = object.userData.displayBondIndices;
+        if (
+          !Array.isArray(displayBondIndices) ||
+          displayBondIndices.length !== object.instanceCount
+        ) {
+          throw new Error("A bond batch is missing its displayed-bond index mapping.");
+        }
+        for (const [instanceIndex, rawBondIndex] of displayBondIndices.entries()) {
+          if (
+            !Number.isInteger(rawBondIndex) ||
+            rawBondIndex < 0 ||
+            rawBondIndex >= projectedBonds.length
+          ) {
+            throw new Error(`Bond batch instance ${instanceIndex} has an invalid bond index.`);
+          }
+          const [red, green, blue] = instanceIdColor(rawBondIndex + 1);
+          object.setColorAt(
+            instanceIndex,
+            new Color(red / 255, green / 255, blue / 255),
+          );
+        }
+        const sourceMaterial = Array.isArray(object.material)
+          ? object.material[0]
+          : object.material;
+        if (!sourceMaterial) {
+          throw new Error("A displayed-bond mesh is missing its material.");
+        }
+        const material = flatBatchInstanceMaterial(sourceMaterial);
+        disposableMaterials.push(material);
+        object.material = material;
+        bondMeshes.push(object);
+        return;
+      }
+
+      const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+      const blackMaterials = sourceMaterials.map(flatBlackMaterial);
+      disposableMaterials.push(...blackMaterials);
+      object.material = Array.isArray(object.material) ? blackMaterials : blackMaterials[0]!;
+    });
+
+    const topDownPixels = flipRgbaRows(
+      renderRgbaTarget({
+        camera,
+        clearColor: new Color(0, 0, 0),
+        renderer,
+        scene,
+        width,
+        height,
+      }),
+      width,
+      height,
+    );
+    const visible = instanceStatistics(topDownPixels, width, height, projectedBonds.length);
+    const annotations = projectedBonds.map((bond): BondInstanceAnnotation => {
+      const instanceId = bond.bondIndex + 1;
+      const stats = visible[bond.bondIndex] ?? emptyInstanceStatistics();
+      return {
+        bondIndex: bond.bondIndex,
+        boundingBox: stats.boundingBox,
+        instanceColor: instanceIdColor(instanceId),
+        instanceId,
+        visiblePixelCount: stats.visiblePixelCount,
+      };
+    });
+    return {
+      annotations,
+      backgroundId: BACKGROUND_INSTANCE_ID,
+      blob: await rgbaPixelsToPngBlob(topDownPixels, width, height),
+      colorEncoding: "rgb24-little-endian",
+      occluderComponents: "visible-mesh-geometry-excluding-screen-space-lines",
+      targetComponent: "displayed-bond-meshes",
+    };
+  } finally {
+    for (const restored of restoredObjects) {
+      restored.object.material = restored.material;
+    }
+    for (const mesh of bondMeshes) {
+      for (let instanceIndex = 0; instanceIndex < mesh.instanceCount; instanceIndex += 1) {
+        mesh.setColorAt(instanceIndex, new Color(1, 1, 1));
+      }
+    }
+    for (const material of disposableMaterials) {
+      material.dispose();
+    }
+    for (const object of hiddenLines) {
+      object.visible = true;
+    }
+  }
+}
+
 export function instanceIdColor(instanceId: number): [number, number, number] {
   if (!Number.isInteger(instanceId) || instanceId <= 0 || instanceId > 0xffffff) {
-    throw new Error(`Atom instance ID ${instanceId} is outside the RGB24 range.`);
+    throw new Error(`Instance ID ${instanceId} is outside the RGB24 range.`);
   }
   return [instanceId & 0xff, (instanceId >> 8) & 0xff, (instanceId >> 16) & 0xff];
 }
@@ -424,6 +590,38 @@ function flatBlackMaterial(source: Material): Material {
     vertexShader: `
       #include <batching_pars_vertex>
       void main() {
+        vec3 transformed = vec3(position);
+        #include <batching_vertex>
+        #include <project_vertex>
+      }
+    `,
+  });
+}
+
+function flatBatchInstanceMaterial(source: Material): Material {
+  return new ShaderMaterial({
+    blending: NoBlending,
+    depthTest: true,
+    depthWrite: true,
+    fog: false,
+    fragmentShader: `
+      varying vec3 vInstanceColor;
+      void main() {
+        gl_FragColor = vec4(vInstanceColor, 1.0);
+      }
+    `,
+    side: source.side,
+    toneMapped: false,
+    transparent: false,
+    vertexShader: `
+      #include <batching_pars_vertex>
+      varying vec3 vInstanceColor;
+      void main() {
+        #ifdef USE_BATCHING_COLOR
+          vInstanceColor = getBatchingColor(getIndirectIndex(gl_DrawID));
+        #else
+          vInstanceColor = vec3(0.0);
+        #endif
         vec3 transformed = vec3(position);
         #include <batching_vertex>
         #include <project_vertex>

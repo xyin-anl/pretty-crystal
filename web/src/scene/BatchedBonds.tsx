@@ -105,6 +105,10 @@ export function BatchedBonds({
       castShadow
       receiveShadow
       renderOrder={STRUCTURE_RENDER_ORDER.bondMesh}
+      userData={{
+        displayBondIndices: batch.items.map((item) => item.bondIndex),
+        prettyCrystalComponent: "bond-instances",
+      }}
     >
       <StructureMaterial
         color={usesVertexColors ? undefined : unicolorBondColor}

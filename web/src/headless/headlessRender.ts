@@ -64,13 +64,14 @@ export interface HeadlessRenderResult {
 export interface HeadlessTrainingSampleResult {
   annotations: StructureRasterMetadata;
   atomInstances?: HeadlessRenderedFile;
+  bondInstances?: HeadlessRenderedFile;
   depth?: {
     dataBase64: string;
     shape: [number, number];
     transferDtype: "float32";
     transferByteOrder: "little-endian";
   };
-  rendererProtocolVersion: 2;
+  rendererProtocolVersion: 3;
   rgb: HeadlessRenderedFile;
 }
 
@@ -88,7 +89,7 @@ interface HeadlessRenderInputs {
   showCrystalAxisLabels: boolean;
   style: StyleState;
   unitCellLineStyle: UnitCellLineStyle;
-  trainingOutputs: ("atom_instances" | "depth")[];
+  trainingOutputs: ("atom_instances" | "bond_instances" | "depth")[];
 }
 
 export interface HeadlessAnimationResult {
@@ -216,6 +217,12 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   ) {
     throw new Error("Atom-instance output requires visible atoms with positive opacity.");
   }
+  if (
+    inputs.trainingOutputs.includes("bond_instances") &&
+    (!inputs.componentVisibility.bonds || inputs.componentOpacity.bonds <= 0)
+  ) {
+    throw new Error("Bond-instance output requires visible bonds with positive opacity.");
+  }
   validateTrainingPassOpacity(inputs, visibleScene);
   const cameraQuaternion = resolveCameraQuaternion(inputs);
   const raster = await rejectOnWindowError(
@@ -238,6 +245,7 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
 
   const format = inputs.exportSettings.format;
   const atomInstances = raster.trainingPasses?.atomInstances;
+  const bondInstances = raster.trainingPasses?.bondInstances;
   const depth = raster.trainingPasses?.depth;
   return {
     annotations: raster.structureMetadata,
@@ -246,6 +254,15 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
           atomInstances: {
             dataBase64: await blobToBase64(atomInstances.blob),
             fileName: `${exportFileStem(inputs.fileName)}.atoms.png`,
+            format: "png",
+          },
+        }
+      : {}),
+    ...(bondInstances
+      ? {
+          bondInstances: {
+            dataBase64: await blobToBase64(bondInstances.blob),
+            fileName: `${exportFileStem(inputs.fileName)}.bonds.png`,
             format: "png",
           },
         }
@@ -262,7 +279,7 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
           },
         }
       : {}),
-    rendererProtocolVersion: 2,
+    rendererProtocolVersion: 3,
     rgb: {
       dataBase64: await blobToBase64(raster.blob),
       fileName: `${exportFileStem(inputs.fileName)}.${format}`,
@@ -498,14 +515,16 @@ function parseFramingScale(data: unknown): number {
   return scale;
 }
 
-function parseTrainingOutputs(data: unknown): ("atom_instances" | "depth")[] {
+function parseTrainingOutputs(
+  data: unknown,
+): ("atom_instances" | "bond_instances" | "depth")[] {
   if (data === undefined || data === null) {
     return [];
   }
   if (!Array.isArray(data)) {
     throw new Error("payload.outputs must be an array.");
   }
-  const supported = ["atom_instances", "depth"] as const;
+  const supported = ["atom_instances", "bond_instances", "depth"] as const;
   return data.map((value, index) =>
     expectOneOf(value, supported, `payload.outputs[${index}]`),
   );
