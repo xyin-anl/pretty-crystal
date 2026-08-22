@@ -50,6 +50,7 @@ export function CellFrame({
     });
     const line = new LineSegments2(geometry, material);
     line.renderOrder = STRUCTURE_RENDER_ORDER.unitCellFrame;
+    line.userData.prettyCrystalComponent = "unit-cell-frame";
     if (lineStyle === "dashed") {
       material.defines.USE_DASH = "";
       material.needsUpdate = true;

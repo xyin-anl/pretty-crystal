@@ -36,7 +36,12 @@ export async function renderExportRaster({
   style: StyleState;
   unitCellLineStyle: UnitCellLineStyle;
   visibleScene: SceneSpec;
-  trainingOutputs?: readonly ("atom_instances" | "bond_instances" | "depth")[];
+  trainingOutputs?: readonly (
+    | "atom_instances"
+    | "bond_instances"
+    | "depth"
+    | "unit_cell_instances"
+  )[];
 }): Promise<RasterExportImage> {
   const { renderStructureRasterImage } = await import("../scene/exportRenderer");
 

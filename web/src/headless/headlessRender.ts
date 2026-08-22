@@ -71,8 +71,9 @@ export interface HeadlessTrainingSampleResult {
     transferDtype: "float32";
     transferByteOrder: "little-endian";
   };
-  rendererProtocolVersion: 3;
+  rendererProtocolVersion: 4;
   rgb: HeadlessRenderedFile;
+  unitCellInstances?: HeadlessRenderedFile;
 }
 
 interface HeadlessRenderInputs {
@@ -89,7 +90,12 @@ interface HeadlessRenderInputs {
   showCrystalAxisLabels: boolean;
   style: StyleState;
   unitCellLineStyle: UnitCellLineStyle;
-  trainingOutputs: ("atom_instances" | "bond_instances" | "depth")[];
+  trainingOutputs: (
+    | "atom_instances"
+    | "bond_instances"
+    | "depth"
+    | "unit_cell_instances"
+  )[];
 }
 
 export interface HeadlessAnimationResult {
@@ -223,6 +229,12 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   ) {
     throw new Error("Bond-instance output requires visible bonds with positive opacity.");
   }
+  if (
+    inputs.trainingOutputs.includes("unit_cell_instances") &&
+    (!inputs.componentVisibility.unitCell || inputs.componentOpacity.unitCell <= 0)
+  ) {
+    throw new Error("Unit-cell-instance output requires a visible unit cell with positive opacity.");
+  }
   validateTrainingPassOpacity(inputs, visibleScene);
   const cameraQuaternion = resolveCameraQuaternion(inputs);
   const raster = await rejectOnWindowError(
@@ -247,6 +259,7 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   const atomInstances = raster.trainingPasses?.atomInstances;
   const bondInstances = raster.trainingPasses?.bondInstances;
   const depth = raster.trainingPasses?.depth;
+  const unitCellInstances = raster.trainingPasses?.unitCellInstances;
   return {
     annotations: raster.structureMetadata,
     ...(atomInstances
@@ -279,7 +292,16 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
           },
         }
       : {}),
-    rendererProtocolVersion: 3,
+    ...(unitCellInstances
+      ? {
+          unitCellInstances: {
+            dataBase64: await blobToBase64(unitCellInstances.blob),
+            fileName: `${exportFileStem(inputs.fileName)}.unit-cell.png`,
+            format: "png",
+          },
+        }
+      : {}),
+    rendererProtocolVersion: 4,
     rgb: {
       dataBase64: await blobToBase64(raster.blob),
       fileName: `${exportFileStem(inputs.fileName)}.${format}`,
@@ -296,6 +318,11 @@ function validateTrainingPassOpacity(
     return;
   }
   const nonOpaqueComponents = [
+    inputs.trainingOutputs.includes("unit_cell_instances") &&
+    inputs.componentVisibility.unitCell &&
+    inputs.componentOpacity.unitCell !== 100
+      ? "unit cell"
+      : null,
     inputs.componentVisibility.atoms &&
     visibleScene.atoms.length > 0 &&
     inputs.componentOpacity.atoms !== 100
@@ -517,14 +544,19 @@ function parseFramingScale(data: unknown): number {
 
 function parseTrainingOutputs(
   data: unknown,
-): ("atom_instances" | "bond_instances" | "depth")[] {
+): ("atom_instances" | "bond_instances" | "depth" | "unit_cell_instances")[] {
   if (data === undefined || data === null) {
     return [];
   }
   if (!Array.isArray(data)) {
     throw new Error("payload.outputs must be an array.");
   }
-  const supported = ["atom_instances", "bond_instances", "depth"] as const;
+  const supported = [
+    "atom_instances",
+    "bond_instances",
+    "depth",
+    "unit_cell_instances",
+  ] as const;
   return data.map((value, index) =>
     expectOneOf(value, supported, `payload.outputs[${index}]`),
   );

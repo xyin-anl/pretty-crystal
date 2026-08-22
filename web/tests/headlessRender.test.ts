@@ -69,6 +69,15 @@ describe("headless render payload", () => {
     expect(inputs.trainingOutputs).toEqual(["bond_instances"]);
   });
 
+  test("accepts the unit-cell instance output", () => {
+    const inputs = parseHeadlessRenderPayload({
+      outputs: ["unit_cell_instances"],
+      scene: validScene(),
+    });
+
+    expect(inputs.trainingOutputs).toEqual(["unit_cell_instances"]);
+  });
+
   test("rejects unknown settings keys with a precise path", () => {
     expect(() =>
       parseHeadlessRenderPayload({
