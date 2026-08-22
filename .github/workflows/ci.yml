@@ -68,5 +68,11 @@ jobs:
         working-directory: web
         run: bun run build
 
+      - name: Upload built frontend
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist
+          path: web/dist
+
       - name: Verify bundled frontend is current
         run: diff -qr web/dist src/pretty_crystal/web_static
