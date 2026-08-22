@@ -220,10 +220,8 @@ async function renderUnitCellInstancePass({
         });
         const geometry = object.geometry.clone();
         const colors = projectedEdges.flatMap((edge) => {
-          const [red, green, blue] = instanceIdColor(edge.edgeIndex + 1).map(
-            (channel) => channel / 255,
-          );
-          return [red, green, blue, red, green, blue];
+          const [red, green, blue] = instanceIdColor(edge.edgeIndex + 1);
+          return [red / 255, green / 255, blue / 255, red / 255, green / 255, blue / 255];
         });
         geometry.setColors(colors);
         const material = object.material.clone();
