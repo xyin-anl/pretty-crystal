@@ -181,7 +181,14 @@ sample = render_training_sample(
     width=512,
     height=512,
     background="white",
-    outputs=("rgb", "atom_instances", "bond_instances", "depth", "metadata"),
+    outputs=(
+        "rgb",
+        "atom_instances",
+        "bond_instances",
+        "depth",
+        "unit_cell_instances",
+        "metadata",
+    ),
 )
 
 sample.rgb.save("SrTiO3.png")
@@ -209,7 +216,14 @@ samples = render_training_samples(
             width=512,
             height=512,
             background="white",
-            outputs=("rgb", "atom_instances", "bond_instances", "depth", "metadata"),
+            outputs=(
+                "rgb",
+                "atom_instances",
+                "bond_instances",
+                "depth",
+                "unit_cell_instances",
+                "metadata",
+            ),
         )
         for view_index, (orientation, scale) in enumerate(views)
     ],
@@ -219,9 +233,10 @@ samples = render_training_samples(
 Each returned `TrainingSample` has its own resolved settings, seed, image, and
 annotations. All samples in the call share the same immutable renderer scene.
 
-Protocol version 3 returns RGB bytes; optional atom-instance and displayed-bond
-instance PNGs; an optional depth array; exact orthographic camera matrices and
-pose; projected atom centers and displayed-bond endpoints in final-image pixels;
+Protocol version 4 returns RGB bytes; optional atom-instance, displayed-bond,
+and unit-cell-edge instance PNGs; an optional depth array; exact orthographic
+camera matrices and pose; projected atom centers, displayed-bond endpoints, and
+the eight unit-cell vertices and twelve edges in final-image pixels;
 camera-space and clip-space atom-center depths; source site indices and periodic
 offsets; polyhedra; the renderer scene and scene-group translation; and resolved
 request settings. Matrices are row-major. The supervision passes use the same
@@ -245,6 +260,12 @@ screen-space line decorations are excluded. Each bond annotation also records
 the two rendered atom IDs and projected endpoint coordinates. These bonds are
 renderer-owned display metadata produced by the selected bond algorithm, not a
 claim about crystallographic bonding.
+
+The unit-cell-edge mask assigns one RGB24 instance ID to each of the twelve
+screen-space frame segments. Visible mesh geometry acts as an opaque occluder,
+and other screen-space decorations are excluded. The projected geometry is
+returned even when the unit-cell component is hidden; `unitCell.rendered`
+records whether the frame was present in the RGB image.
 
 Depth values are returned as a `float32` array in normalized orthographic
 device-depth coordinates: zero is the near plane and one is the far plane or

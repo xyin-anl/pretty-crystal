@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pretty-crystal.local/schemas/training-protocol-3.json",
+  "$id": "https://pretty-crystal.local/schemas/training-protocol-4.json",
   "title": "Pretty Crystal training sample metadata",
   "type": "object",
   "additionalProperties": false,
@@ -14,7 +14,7 @@
     "annotations"
   ],
   "properties": {
-    "renderer_protocol_version": {"const": 3},
+    "renderer_protocol_version": {"const": 4},
     "structure_id": {"type": "string", "minLength": 1},
     "canonical_structure_hash": {"type": "string", "minLength": 1},
     "seed": {"type": "integer", "minimum": 0},
@@ -23,7 +23,7 @@
     "annotations": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["atoms", "camera", "displayBonds", "frame", "polyhedra"],
+      "required": ["atoms", "camera", "displayBonds", "frame", "polyhedra", "unitCell"],
       "properties": {
         "atoms": {
           "type": "array",
@@ -170,6 +170,63 @@
           }
         },
         "polyhedra": {"type": "array", "items": {"type": "object"}},
+        "unitCell": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["edges", "rendered", "vertices"],
+          "properties": {
+            "edges": {
+              "type": "array",
+              "minItems": 12,
+              "maxItems": 12,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "edgeIndex",
+                  "endVertexIndex",
+                  "endXy",
+                  "startVertexIndex",
+                  "startXy"
+                ],
+                "properties": {
+                  "edgeIndex": {"type": "integer", "minimum": 0, "maximum": 11},
+                  "endVertexIndex": {"type": "integer", "minimum": 0, "maximum": 7},
+                  "endXy": {"$ref": "#/$defs/vector2"},
+                  "startVertexIndex": {"type": "integer", "minimum": 0, "maximum": 7},
+                  "startXy": {"$ref": "#/$defs/vector2"},
+                  "instance": {"$ref": "#/$defs/unitCellInstance"}
+                }
+              }
+            },
+            "rendered": {"type": "boolean"},
+            "vertices": {
+              "type": "array",
+              "minItems": 8,
+              "maxItems": 8,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "cameraDepth",
+                  "clipDepth",
+                  "fractionalOffset",
+                  "vertexIndex",
+                  "withinFrame",
+                  "xy"
+                ],
+                "properties": {
+                  "cameraDepth": {"type": "number"},
+                  "clipDepth": {"type": "number"},
+                  "fractionalOffset": {"$ref": "#/$defs/integerVector3"},
+                  "vertexIndex": {"type": "integer", "minimum": 0, "maximum": 7},
+                  "withinFrame": {"type": "boolean"},
+                  "xy": {"$ref": "#/$defs/vector2"}
+                }
+              }
+            }
+          }
+        },
         "training": {
           "type": "object",
           "additionalProperties": false,
@@ -242,6 +299,24 @@
                 "transferByteOrder": {"const": "little-endian"},
                 "valueConvention": {"const": "orthographic-normalized-device-depth"}
               }
+            },
+            "unitCellInstances": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "backgroundId",
+                "colorEncoding",
+                "occluderComponents",
+                "targetComponent"
+              ],
+              "properties": {
+                "backgroundId": {"const": 0},
+                "colorEncoding": {"const": "rgb24-little-endian"},
+                "occluderComponents": {
+                  "const": "visible-mesh-geometry-excluding-other-screen-space-lines"
+                },
+                "targetComponent": {"const": "unit-cell-frame"}
+              }
             }
           }
         }
@@ -279,6 +354,39 @@
           "items": {"type": "integer", "minimum": 0, "maximum": 255}
         },
         "instanceId": {"type": "integer", "minimum": 1, "maximum": 16777215},
+        "visiblePixelCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "unitCellInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundingBox",
+        "edgeIndex",
+        "instanceColor",
+        "instanceId",
+        "visiblePixelCount"
+      ],
+      "properties": {
+        "boundingBox": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {"type": "integer", "minimum": 0}
+            }
+          ]
+        },
+        "edgeIndex": {"type": "integer", "minimum": 0, "maximum": 11},
+        "instanceColor": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "integer", "minimum": 0, "maximum": 255}
+        },
+        "instanceId": {"type": "integer", "minimum": 1, "maximum": 12},
         "visiblePixelCount": {"type": "integer", "minimum": 0}
       }
     },

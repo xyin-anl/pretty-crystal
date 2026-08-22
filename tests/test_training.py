@@ -55,6 +55,11 @@ class FakeTrainingRenderer:
                 if "bond_instances" in outputs
                 else None
             ),
+            unit_cell_instances=(
+                RenderedFigureFile(b"unit-cell", "SrTiO3.unit-cell.png", "png")
+                if "unit_cell_instances" in outputs
+                else None
+            ),
             depth=depth.tobytes() if depth is not None else None,
             depth_shape=depth.shape if depth is not None else None,
             annotations={
@@ -131,6 +136,23 @@ def test_render_training_sample_returns_requested_bond_instances(monkeypatch) ->
     assert sample.bond_instances is not None
     assert sample.bond_instances.data == b"bonds"
     assert renderer.calls[0]["outputs"] == ("bond_instances",)
+
+
+def test_render_training_sample_returns_requested_unit_cell_instances(monkeypatch) -> None:
+    renderer = FakeTrainingRenderer()
+    monkeypatch.setattr("pretty_crystal.training._renderer", lambda: renderer)
+
+    sample = render_training_sample(
+        FIXTURE_DIR / "SrTiO3.cif",
+        structure_id="structure-" + "a" * 64,
+        canonical_structure_hash="a" * 64,
+        seed=42,
+        outputs=("rgb", "unit_cell_instances", "metadata"),
+    )
+
+    assert sample.unit_cell_instances is not None
+    assert sample.unit_cell_instances.data == b"unit-cell"
+    assert renderer.calls[0]["outputs"] == ("unit_cell_instances",)
 
 
 def test_render_training_samples_reuses_one_structure_scene(monkeypatch) -> None:
@@ -215,6 +237,7 @@ def test_headless_training_bridge_decodes_protocol_result() -> None:
     assert result.atom_instances is None
     assert result.bond_instances is not None
     assert result.bond_instances.data == b"bonds"
+    assert result.unit_cell_instances is None
     assert result.depth is None
     assert result.rgb.data == b"rgb"
     assert result.rgb.file_name == "sample.png"

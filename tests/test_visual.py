@@ -124,11 +124,19 @@ def test_training_supervision_passes_align_with_camera() -> None:
             },
         },
         bond_algorithm="crystal-nn",
-        outputs=("rgb", "atom_instances", "bond_instances", "depth", "metadata"),
+        outputs=(
+            "rgb",
+            "atom_instances",
+            "bond_instances",
+            "depth",
+            "unit_cell_instances",
+            "metadata",
+        ),
     )
 
     assert sample.atom_instances is not None
     assert sample.bond_instances is not None
+    assert sample.unit_cell_instances is not None
     assert sample.depth is not None
     mask = np.asarray(
         Image.open(BytesIO(sample.atom_instances.data)).convert("RGB"), dtype=np.uint32
@@ -157,6 +165,23 @@ def test_training_supervision_passes_align_with_camera() -> None:
     atom_ids = {atom["renderAtomId"] for atom in sample.annotations["atoms"]}
     assert all(bond["startRenderAtomId"] in atom_ids for bond in display_bonds)
     assert all(bond["endRenderAtomId"] in atom_ids for bond in display_bonds)
+    unit_cell_mask = np.asarray(
+        Image.open(BytesIO(sample.unit_cell_instances.data)).convert("RGB"), dtype=np.uint32
+    )
+    unit_cell_ids = (
+        unit_cell_mask[:, :, 0]
+        + (unit_cell_mask[:, :, 1] << 8)
+        + (unit_cell_mask[:, :, 2] << 16)
+    )
+    declared_unit_cell_ids = {
+        edge["instance"]["instanceId"] for edge in sample.annotations["unitCell"]["edges"]
+    }
+    actual_unit_cell_ids = set(np.unique(unit_cell_ids)) - {0}
+    assert sample.annotations["unitCell"]["rendered"] is True
+    assert len(sample.annotations["unitCell"]["vertices"]) == 8
+    assert len(sample.annotations["unitCell"]["edges"]) == 12
+    assert actual_unit_cell_ids
+    assert actual_unit_cell_ids <= declared_unit_cell_ids
     assert sample.depth.shape == (128, 128)
     assert sample.depth.dtype == np.float32
     assert np.isfinite(sample.depth).all()

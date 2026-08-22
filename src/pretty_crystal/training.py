@@ -13,9 +13,16 @@ from pretty_crystal.figures import RenderedFigure, _merge_settings, _renderer, _
 if TYPE_CHECKING:
     from pymatgen.core import Structure
 
-RENDERER_PROTOCOL_VERSION = 3
+RENDERER_PROTOCOL_VERSION = 4
 _SUPPORTED_OUTPUTS = frozenset(
-    {"rgb", "atom_instances", "bond_instances", "depth", "metadata"}
+    {
+        "rgb",
+        "atom_instances",
+        "bond_instances",
+        "depth",
+        "metadata",
+        "unit_cell_instances",
+    }
 )
 
 
@@ -26,6 +33,7 @@ class TrainingSample:
     rgb: RenderedFigure
     atom_instances: RenderedFigure | None
     bond_instances: RenderedFigure | None
+    unit_cell_instances: RenderedFigure | None
     depth: np.ndarray | None
     structure_id: str
     canonical_structure_hash: str
@@ -148,7 +156,12 @@ def render_training_samples(
             outputs=tuple(
                 output
                 for output in spec.outputs
-                if output in {"atom_instances", "bond_instances", "depth"}
+                if output in {
+                    "atom_instances",
+                    "bond_instances",
+                    "depth",
+                    "unit_cell_instances",
+                }
             ),
         )
         samples.append(
@@ -195,6 +208,8 @@ def _training_sample(
         raise RuntimeError("Renderer omitted the requested atom-instance pass.")
     if "bond_instances" in outputs and rendered.bond_instances is None:
         raise RuntimeError("Renderer omitted the requested bond-instance pass.")
+    if "unit_cell_instances" in outputs and rendered.unit_cell_instances is None:
+        raise RuntimeError("Renderer omitted the requested unit-cell-instance pass.")
     if "depth" in outputs and rendered.depth is None:
         raise RuntimeError("Renderer omitted the requested depth pass.")
 
@@ -224,6 +239,15 @@ def _training_sample(
                 rendered.bond_instances.format,
             )
             if rendered.bond_instances is not None
+            else None
+        ),
+        unit_cell_instances=(
+            RenderedFigure(
+                rendered.unit_cell_instances.data,
+                rendered.unit_cell_instances.file_name,
+                rendered.unit_cell_instances.format,
+            )
+            if rendered.unit_cell_instances is not None
             else None
         ),
         depth=depth,

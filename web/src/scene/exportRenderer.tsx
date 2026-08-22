@@ -33,7 +33,12 @@ import {
   renderStructureTrainingPasses,
   type StructureTrainingPasses,
 } from "./trainingPasses";
-import { atomRadiusForModel } from "./sceneGeometry";
+import {
+  CELL_CORNER_FRACTIONAL_OFFSETS,
+  CELL_FRAME_VERTEX_INDEX_PAIRS,
+  atomRadiusForModel,
+  cellCorners,
+} from "./sceneGeometry";
 import {
   ORIENTATION_GIZMO_CAMERA_POSITION,
   ORIENTATION_GIZMO_LABEL_DISTANCE,
@@ -71,6 +76,7 @@ export interface StructureRasterMetadata {
     zoom: number;
   };
   polyhedra: SceneSpec["polyhedra"];
+  unitCell: ProjectedUnitCellAnnotation;
   training?: {
     atomInstances?: Omit<
       NonNullable<StructureTrainingPasses["atomInstances"]>,
@@ -83,6 +89,10 @@ export interface StructureRasterMetadata {
     depth?: Omit<NonNullable<StructureTrainingPasses["depth"]>, "data"> & {
       storageDtype: "float16";
     };
+    unitCellInstances?: Omit<
+      NonNullable<StructureTrainingPasses["unitCellInstances"]>,
+      "annotations" | "blob"
+    >;
   };
 }
 
@@ -123,6 +133,30 @@ export type ProjectedDisplayBondAnnotation = SceneSpec["bonds"][number] & {
   startXy: [number, number];
 };
 
+export interface ProjectedUnitCellVertexAnnotation {
+  cameraDepth: number;
+  clipDepth: number;
+  fractionalOffset: [number, number, number];
+  vertexIndex: number;
+  withinFrame: boolean;
+  xy: [number, number];
+}
+
+export interface ProjectedUnitCellEdgeAnnotation {
+  edgeIndex: number;
+  endVertexIndex: number;
+  endXy: [number, number];
+  instance?: import("./trainingPasses").UnitCellEdgeInstanceAnnotation;
+  startVertexIndex: number;
+  startXy: [number, number];
+}
+
+export interface ProjectedUnitCellAnnotation {
+  edges: ProjectedUnitCellEdgeAnnotation[];
+  rendered: boolean;
+  vertices: ProjectedUnitCellVertexAnnotation[];
+}
+
 export type RasterExportImageFormat = "jpg" | "png";
 
 export interface RasterExportBounds {
@@ -162,7 +196,12 @@ export interface RenderStructureRasterOptions {
   unitCellLineColor?: string;
   unitCellLineStyle: UnitCellLineStyle;
   width: number;
-  trainingOutputs?: readonly ("atom_instances" | "bond_instances" | "depth")[];
+  trainingOutputs?: readonly (
+    | "atom_instances"
+    | "bond_instances"
+    | "depth"
+    | "unit_cell_instances"
+  )[];
 }
 
 export interface StructureExportFrameOverride {
@@ -327,6 +366,7 @@ export async function renderStructureRasterImage({
       groupPosition: layout.groupPosition,
       height,
       scene,
+      showUnitCell: showUnitCell && componentOpacity.unitCell > 0,
       supersampling,
       width,
     });
@@ -351,6 +391,7 @@ export async function renderStructureRasterImage({
         outputs: trainingOutputs,
         projectedAtoms: structureMetadata.atoms,
         projectedBonds: structureMetadata.displayBonds,
+        projectedUnitCellEdges: structureMetadata.unitCell.edges,
         renderer: state.gl,
         scene: state.scene,
         width,
@@ -377,6 +418,18 @@ export async function renderStructureRasterImage({
         structureMetadata.displayBonds = structureMetadata.displayBonds.map((bond) => ({
           ...bond,
           instance: instancesByBondIndex.get(bond.bondIndex),
+        }));
+      }
+      if (trainingPasses.unitCellInstances) {
+        const instancesByEdgeIndex = new Map(
+          trainingPasses.unitCellInstances.annotations.map((annotation) => [
+            annotation.edgeIndex,
+            annotation,
+          ]),
+        );
+        structureMetadata.unitCell.edges = structureMetadata.unitCell.edges.map((edge) => ({
+          ...edge,
+          instance: instancesByEdgeIndex.get(edge.edgeIndex),
         }));
       }
       structureMetadata.training = {
@@ -415,6 +468,16 @@ export async function renderStructureRasterImage({
               },
             }
           : {}),
+        ...(trainingPasses.unitCellInstances
+          ? {
+              unitCellInstances: {
+                backgroundId: trainingPasses.unitCellInstances.backgroundId,
+                colorEncoding: trainingPasses.unitCellInstances.colorEncoding,
+                occluderComponents: trainingPasses.unitCellInstances.occluderComponents,
+                targetComponent: trainingPasses.unitCellInstances.targetComponent,
+              },
+            }
+          : {}),
       };
     }
     return {
@@ -438,6 +501,7 @@ export function structureRasterMetadata({
   groupPosition,
   height,
   scene,
+  showUnitCell,
   supersampling,
   width,
 }: {
@@ -447,6 +511,7 @@ export function structureRasterMetadata({
   groupPosition: [number, number, number];
   height: number;
   scene: SceneSpec;
+  showUnitCell: boolean;
   supersampling: number;
   width: number;
 }): StructureRasterMetadata {
@@ -458,8 +523,8 @@ export function structureRasterMetadata({
   const up = camera.up.toArray() as [number, number, number];
   const quaternion = camera.quaternion.toArray() as [number, number, number, number];
   const groupOffset = new Vector3(...groupPosition);
-  const atoms = scene.atoms.map((atom): ProjectedAtomAnnotation => {
-    const worldPosition = new Vector3(...atom.position).add(groupOffset);
+  const projectPosition = (position: Vector3) => {
+    const worldPosition = position.clone().add(groupOffset);
     const cameraPosition = worldPosition.clone().applyMatrix4(camera.matrixWorldInverse);
     const clipPosition = worldPosition.clone().project(camera);
     const x = ((clipPosition.x + 1) / 2) * width;
@@ -467,11 +532,6 @@ export function structureRasterMetadata({
     return {
       cameraDepth: -cameraPosition.z,
       clipDepth: clipPosition.z,
-      element: atom.element,
-      imageOffset: atom.imageOffset,
-      renderAtomId: atom.id,
-      siteId: atom.siteId,
-      siteIndex: atom.siteIndex,
       withinFrame:
         x >= 0 &&
         x < width &&
@@ -479,7 +539,21 @@ export function structureRasterMetadata({
         y < height &&
         clipPosition.z >= -1 &&
         clipPosition.z <= 1,
-      xy: [x, y],
+      xy: [x, y] as [number, number],
+    };
+  };
+  const atoms = scene.atoms.map((atom): ProjectedAtomAnnotation => {
+    const projected = projectPosition(new Vector3(...atom.position));
+    return {
+      cameraDepth: projected.cameraDepth,
+      clipDepth: projected.clipDepth,
+      element: atom.element,
+      imageOffset: atom.imageOffset,
+      renderAtomId: atom.id,
+      siteId: atom.siteId,
+      siteIndex: atom.siteIndex,
+      withinFrame: projected.withinFrame,
+      xy: projected.xy,
     };
   });
   const displayBonds = scene.bonds.map((bond, bondIndex): ProjectedDisplayBondAnnotation => {
@@ -497,6 +571,30 @@ export function structureRasterMetadata({
       startXy: startAtom.xy,
     };
   });
+  const vertices = cellCorners(scene.cell.vectors).map(
+    (corner, vertexIndex): ProjectedUnitCellVertexAnnotation => ({
+      ...projectPosition(corner),
+      fractionalOffset: [...CELL_CORNER_FRACTIONAL_OFFSETS[vertexIndex]!] as [
+        number,
+        number,
+        number,
+      ],
+      vertexIndex,
+    }),
+  );
+  const unitCell: ProjectedUnitCellAnnotation = {
+    edges: CELL_FRAME_VERTEX_INDEX_PAIRS.map(
+      ([startVertexIndex, endVertexIndex], edgeIndex): ProjectedUnitCellEdgeAnnotation => ({
+        edgeIndex,
+        endVertexIndex,
+        endXy: vertices[endVertexIndex]!.xy,
+        startVertexIndex,
+        startXy: vertices[startVertexIndex]!.xy,
+      }),
+    ),
+    rendered: showUnitCell,
+    vertices,
+  };
 
   return {
     atoms,
@@ -523,6 +621,7 @@ export function structureRasterMetadata({
       zoom: exportFramePlan.zoom / supersampling,
     },
     polyhedra: scene.polyhedra,
+    unitCell,
   };
 }
 

@@ -34,6 +34,7 @@ describe("training render annotations", () => {
       groupPosition: [0, 0, 0],
       height: 100,
       scene: sceneWithAtom([0, 0, 0]),
+      showUnitCell: true,
       supersampling: 1,
       width: 100,
     });
@@ -49,6 +50,21 @@ describe("training render annotations", () => {
     expect(metadata.atoms[0]?.xy[1]).toBeCloseTo(50, 8);
     expect(metadata.atoms[0]?.cameraDepth).toBeCloseTo(5, 8);
     expect(metadata.atoms[0]?.withinFrame).toBe(true);
+    expect(metadata.unitCell.rendered).toBe(true);
+    expect(metadata.unitCell.vertices).toHaveLength(8);
+    expect(metadata.unitCell.edges).toHaveLength(12);
+    expect(metadata.unitCell.vertices[0]).toMatchObject({
+      fractionalOffset: [0, 0, 0],
+      vertexIndex: 0,
+      xy: [50, 50],
+    });
+    expect(metadata.unitCell.vertices[7]?.fractionalOffset).toEqual([1, 1, 1]);
+    expect(metadata.unitCell.edges[0]).toMatchObject({
+      edgeIndex: 0,
+      endVertexIndex: 1,
+      startVertexIndex: 0,
+      startXy: [50, 50],
+    });
   });
 
   test("round-trips little-endian RGB24 atom instance IDs", () => {
@@ -94,6 +110,7 @@ describe("training render annotations", () => {
       groupPosition: [0, 0, 0],
       height: 100,
       scene,
+      showUnitCell: true,
       supersampling: 1,
       width: 100,
     });
@@ -140,6 +157,7 @@ describe("training render annotations", () => {
       groupPosition: [0, 0, 0],
       height: 100,
       scene: sceneWithAtom([0, 0, 0]),
+      showUnitCell: true,
       supersampling: 2,
       width: 100,
     });

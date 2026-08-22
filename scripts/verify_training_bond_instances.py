@@ -12,7 +12,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from pretty_crystal import close_renderer, render_training_sample
+from pretty_crystal import RENDERER_PROTOCOL_VERSION, close_renderer, render_training_sample
 
 ROOT = Path(__file__).resolve().parents[1]
 WIDTH = 256
@@ -104,14 +104,26 @@ def main(output_dir: Path) -> None:
                 },
             },
             bond_algorithm="crystal-nn",
-            outputs=("rgb", "atom_instances", "bond_instances", "depth", "metadata"),
+            outputs=(
+                "rgb",
+                "atom_instances",
+                "bond_instances",
+                "depth",
+                "unit_cell_instances",
+                "metadata",
+            ),
         )
     finally:
         close_renderer()
 
-    if sample.renderer_protocol_version != 3:
+    if sample.renderer_protocol_version != RENDERER_PROTOCOL_VERSION:
         raise AssertionError(f"Unexpected protocol version {sample.renderer_protocol_version}.")
-    if sample.atom_instances is None or sample.bond_instances is None or sample.depth is None:
+    if (
+        sample.atom_instances is None
+        or sample.bond_instances is None
+        or sample.depth is None
+        or sample.unit_cell_instances is None
+    ):
         raise AssertionError("The renderer omitted a requested training output.")
     if sample.depth.shape != (HEIGHT, WIDTH):
         raise AssertionError(f"Unexpected depth shape {sample.depth.shape}.")
@@ -131,22 +143,35 @@ def main(output_dir: Path) -> None:
 
     atom_instance_ids = _instance_ids(sample.atom_instances.data)
     bond_instance_ids = _instance_ids(sample.bond_instances.data)
+    unit_cell_instance_ids = _instance_ids(sample.unit_cell_instances.data)
     declared_atoms, visible_atoms = _validate_instances(
         atom_instance_ids, [atom["instance"] for atom in atoms]
     )
     declared_bonds, visible_bonds = _validate_instances(
         bond_instance_ids, [bond["instance"] for bond in bonds]
     )
+    unit_cell = sample.annotations["unitCell"]
+    if not unit_cell["rendered"] or len(unit_cell["vertices"]) != 8:
+        raise AssertionError("The unit-cell projection annotations are incomplete.")
+    declared_unit_cell_edges, visible_unit_cell_edges = _validate_instances(
+        unit_cell_instance_ids, [edge["instance"] for edge in unit_cell["edges"]]
+    )
 
     sample.rgb.save(output_dir / "rgb.png")
     sample.atom_instances.save(output_dir / "atom_instances.png")
     sample.bond_instances.save(output_dir / "bond_instances.png")
+    sample.unit_cell_instances.save(output_dir / "unit_cell_instances.png")
     np.save(output_dir / "depth.npy", sample.depth)
     _mask_preview(atom_instance_ids).save(output_dir / "atom_instances_preview.png")
     bond_preview = _mask_preview(bond_instance_ids)
     bond_preview.save(output_dir / "bond_instances_preview.png")
+    unit_cell_preview = _mask_preview(unit_cell_instance_ids)
+    unit_cell_preview.save(output_dir / "unit_cell_instances_preview.png")
     rgb = Image.open(BytesIO(sample.rgb.data)).convert("RGB")
     Image.blend(rgb, bond_preview, alpha=0.55).save(output_dir / "rgb_bond_overlay.png")
+    Image.blend(rgb, unit_cell_preview, alpha=0.55).save(
+        output_dir / "rgb_unit_cell_overlay.png"
+    )
 
     metadata = sample.metadata()
     (output_dir / "metadata.json").write_text(
@@ -156,6 +181,7 @@ def main(output_dir: Path) -> None:
     summary = {
         "declared_atom_instances": declared_atoms,
         "declared_bond_instances": declared_bonds,
+        "declared_unit_cell_edges": declared_unit_cell_edges,
         "depth_background_pixels": int(np.count_nonzero(sample.depth == 1)),
         "depth_foreground_pixels": int(np.count_nonzero(sample.depth < 1)),
         "height": HEIGHT,
@@ -163,6 +189,7 @@ def main(output_dir: Path) -> None:
         "total_visible_bond_pixels": int(sum(bond_pixel_counts.values())),
         "visible_atom_instances": visible_atoms,
         "visible_bond_instances": visible_bonds,
+        "visible_unit_cell_edges": visible_unit_cell_edges,
         "width": WIDTH,
     }
     (output_dir / "summary.json").write_text(

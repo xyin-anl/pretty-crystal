@@ -20,10 +20,14 @@ import {
   WebGLRenderer,
   WebGLRenderTarget,
 } from "three";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 
 import type {
   ProjectedAtomAnnotation,
   ProjectedDisplayBondAnnotation,
+  ProjectedUnitCellEdgeAnnotation,
 } from "./exportRenderer";
 
 const BACKGROUND_INSTANCE_ID = 0;
@@ -77,10 +81,28 @@ export interface DepthRasterPass {
   valueConvention: "orthographic-normalized-device-depth";
 }
 
+export interface UnitCellEdgeInstanceAnnotation {
+  boundingBox: [number, number, number, number] | null;
+  edgeIndex: number;
+  instanceColor: [number, number, number];
+  instanceId: number;
+  visiblePixelCount: number;
+}
+
+export interface UnitCellInstanceRasterPass {
+  annotations: UnitCellEdgeInstanceAnnotation[];
+  backgroundId: 0;
+  blob: Blob;
+  colorEncoding: "rgb24-little-endian";
+  occluderComponents: "visible-mesh-geometry-excluding-other-screen-space-lines";
+  targetComponent: "unit-cell-frame";
+}
+
 export interface StructureTrainingPasses {
   atomInstances?: AtomInstanceRasterPass;
   bondInstances?: BondInstanceRasterPass;
   depth?: DepthRasterPass;
+  unitCellInstances?: UnitCellInstanceRasterPass;
 }
 
 export async function renderStructureTrainingPasses({
@@ -93,13 +115,20 @@ export async function renderStructureTrainingPasses({
   atomRadiusPixels,
   outputs,
   projectedBonds,
+  projectedUnitCellEdges,
 }: {
   atomRadiusPixels: ReadonlyMap<string, number>;
   camera: OrthographicCamera;
   height: number;
-  outputs: readonly ("atom_instances" | "bond_instances" | "depth")[];
+  outputs: readonly (
+    | "atom_instances"
+    | "bond_instances"
+    | "depth"
+    | "unit_cell_instances"
+  )[];
   projectedAtoms: readonly ProjectedAtomAnnotation[];
   projectedBonds: readonly ProjectedDisplayBondAnnotation[];
+  projectedUnitCellEdges: readonly ProjectedUnitCellEdgeAnnotation[];
   renderer: WebGLRenderer;
   scene: Scene;
   width: number;
@@ -129,7 +158,160 @@ export async function renderStructureTrainingPasses({
   if (outputs.includes("depth")) {
     result.depth = renderDepthPass({ camera, height, renderer, scene, width });
   }
+  if (outputs.includes("unit_cell_instances")) {
+    result.unitCellInstances = await renderUnitCellInstancePass({
+      camera,
+      height,
+      projectedEdges: projectedUnitCellEdges,
+      renderer,
+      scene,
+      width,
+    });
+  }
   return result;
+}
+
+async function renderUnitCellInstancePass({
+  camera,
+  height,
+  projectedEdges,
+  renderer,
+  scene,
+  width,
+}: {
+  camera: OrthographicCamera;
+  height: number;
+  projectedEdges: readonly ProjectedUnitCellEdgeAnnotation[];
+  renderer: WebGLRenderer;
+  scene: Scene;
+  width: number;
+}): Promise<UnitCellInstanceRasterPass> {
+  const restoredObjects: Array<{
+    material: Material | Material[];
+    object: MaterialObject;
+  }> = [];
+  const restoredLines: Array<{
+    geometry: LineSegmentsGeometry;
+    line: LineSegments2;
+    material: LineMaterial;
+  }> = [];
+  const disposableGeometries: LineSegmentsGeometry[] = [];
+  const disposableMaterials: Material[] = [];
+  const hiddenLines: Object3D[] = [];
+  let targetCount = 0;
+
+  scene.traverse((object) => {
+    if (isScreenSpaceLine(object)) {
+      if (
+        object instanceof LineSegments2 &&
+        object.userData.prettyCrystalComponent === "unit-cell-frame"
+      ) {
+        if (!(object.geometry instanceof LineSegmentsGeometry)) {
+          throw new Error("The unit-cell frame has an unexpected line geometry.");
+        }
+        if (!(object.material instanceof LineMaterial)) {
+          throw new Error("The unit-cell frame has an unexpected line material.");
+        }
+        targetCount += 1;
+        restoredLines.push({
+          geometry: object.geometry,
+          line: object,
+          material: object.material,
+        });
+        const geometry = object.geometry.clone();
+        const colors = projectedEdges.flatMap((edge) => {
+          const [red, green, blue] = instanceIdColor(edge.edgeIndex + 1).map(
+            (channel) => channel / 255,
+          );
+          return [red, green, blue, red, green, blue];
+        });
+        geometry.setColors(colors);
+        const material = object.material.clone();
+        material.alphaToCoverage = false;
+        material.blending = NoBlending;
+        material.color.setRGB(1, 1, 1);
+        material.fog = false;
+        material.opacity = 1;
+        material.toneMapped = false;
+        material.transparent = false;
+        material.vertexColors = true;
+        material.needsUpdate = true;
+        object.geometry = geometry;
+        object.material = material;
+        disposableGeometries.push(geometry);
+        disposableMaterials.push(material);
+      } else if (object.visible) {
+        hiddenLines.push(object);
+        object.visible = false;
+      }
+      return;
+    }
+    if (!isMaterialObject(object)) {
+      return;
+    }
+    restoredObjects.push({ material: object.material, object });
+    const sourceMaterials = Array.isArray(object.material)
+      ? object.material
+      : [object.material];
+    const blackMaterials = sourceMaterials.map(flatBlackMaterial);
+    disposableMaterials.push(...blackMaterials);
+    object.material = Array.isArray(object.material) ? blackMaterials : blackMaterials[0]!;
+  });
+
+  try {
+    if (targetCount !== 1) {
+      throw new Error(`Expected one visible unit-cell frame, found ${targetCount}.`);
+    }
+    const topDownPixels = flipRgbaRows(
+      renderRgbaTarget({
+        camera,
+        clearColor: new Color(0, 0, 0),
+        renderer,
+        scene,
+        width,
+        height,
+      }),
+      width,
+      height,
+    );
+    const visible = instanceStatistics(topDownPixels, width, height, projectedEdges.length);
+    const annotations = projectedEdges.map((edge): UnitCellEdgeInstanceAnnotation => {
+      const instanceId = edge.edgeIndex + 1;
+      const stats = visible[edge.edgeIndex] ?? emptyInstanceStatistics();
+      return {
+        boundingBox: stats.boundingBox,
+        edgeIndex: edge.edgeIndex,
+        instanceColor: instanceIdColor(instanceId),
+        instanceId,
+        visiblePixelCount: stats.visiblePixelCount,
+      };
+    });
+    return {
+      annotations,
+      backgroundId: BACKGROUND_INSTANCE_ID,
+      blob: await rgbaPixelsToPngBlob(topDownPixels, width, height),
+      colorEncoding: "rgb24-little-endian",
+      occluderComponents: "visible-mesh-geometry-excluding-other-screen-space-lines",
+      targetComponent: "unit-cell-frame",
+    };
+  } finally {
+    for (const restored of restoredObjects) {
+      restored.object.material = restored.material;
+    }
+    for (const restored of restoredLines) {
+      restored.line.geometry = restored.geometry;
+      restored.line.material = restored.material;
+    }
+    for (const object of hiddenLines) {
+      object.visible = true;
+    }
+    for (const geometry of disposableGeometries) {
+      geometry.dispose();
+    }
+    for (const material of disposableMaterials) {
+      material.dispose();
+    }
+  }
 }
 
 async function renderBondInstancePass({
