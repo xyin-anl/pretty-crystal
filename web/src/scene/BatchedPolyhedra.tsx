@@ -198,6 +198,9 @@ export function createPolyhedronSurfaceBatchBuild({
   displayed.validPolyhedronIndices.forEach((polyhedronIndex) => {
     const polyhedron = polyhedra[polyhedronIndex]!;
     const centerAtom = atoms[polyhedron.centerAtomIndex];
+    if (!centerAtom) {
+      return;
+    }
     edgeItems.push({
       edges: edgesByPolyhedron.get(polyhedronIndex) ?? [],
       polyhedron,
