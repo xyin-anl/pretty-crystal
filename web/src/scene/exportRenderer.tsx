@@ -393,6 +393,7 @@ export async function renderStructureRasterImage({
     const state = rootState ?? store.getState();
     state.advance(performance.now(), true);
     state.advance(performance.now() + 16, true);
+    state.gl.render(state.scene, state.camera);
 
     const outputCanvas =
       supersampling === 1 ? canvas : downsampleCanvas(canvas, width, height);
