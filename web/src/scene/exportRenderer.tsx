@@ -391,9 +391,9 @@ export async function renderStructureRasterImage({
 
     await mounted;
     const state = rootState ?? store.getState();
+    await state.gl.compileAsync(state.scene, state.camera);
     state.advance(performance.now(), true);
     state.advance(performance.now() + 16, true);
-    state.gl.render(state.scene, state.camera);
 
     const outputCanvas =
       supersampling === 1 ? canvas : downsampleCanvas(canvas, width, height);
