@@ -132,6 +132,12 @@ def main(output_dir: Path) -> None:
         or sample.unit_cell_instances is None
     ):
         raise AssertionError("The renderer omitted a requested training output.")
+    sample.rgb.save(output_dir / "rgb.png")
+    rgb = Image.open(BytesIO(sample.rgb.data)).convert("RGB")
+    rgb_pixels = np.asarray(rgb, dtype=np.uint8)
+    rgb_foreground_pixels = int(np.count_nonzero(np.any(rgb_pixels != 255, axis=2)))
+    if rgb_foreground_pixels == 0:
+        raise AssertionError("The RGB render is empty.")
     if sample.depth.shape != (HEIGHT, WIDTH):
         raise AssertionError(f"Unexpected depth shape {sample.depth.shape}.")
     if not np.isfinite(sample.depth).all() or np.any((sample.depth < 0) | (sample.depth > 1)):
@@ -199,7 +205,6 @@ def main(output_dir: Path) -> None:
         require_visible=False,
     )
 
-    sample.rgb.save(output_dir / "rgb.png")
     sample.atom_instances.save(output_dir / "atom_instances.png")
     sample.bond_instances.save(output_dir / "bond_instances.png")
     sample.polyhedron_edge_instances.save(output_dir / "polyhedron_edge_instances.png")
@@ -215,7 +220,6 @@ def main(output_dir: Path) -> None:
     polyhedron_surface_preview.save(output_dir / "polyhedron_surface_instances_preview.png")
     unit_cell_preview = _mask_preview(unit_cell_instance_ids)
     unit_cell_preview.save(output_dir / "unit_cell_instances_preview.png")
-    rgb = Image.open(BytesIO(sample.rgb.data)).convert("RGB")
     Image.blend(rgb, bond_preview, alpha=0.55).save(output_dir / "rgb_bond_overlay.png")
     Image.blend(rgb, polyhedron_edge_preview, alpha=0.55).save(
         output_dir / "rgb_polyhedron_edge_overlay.png"
@@ -242,6 +246,7 @@ def main(output_dir: Path) -> None:
         "depth_foreground_pixels": int(np.count_nonzero(sample.depth < 1)),
         "height": HEIGHT,
         "protocol_version": sample.renderer_protocol_version,
+        "rgb_foreground_pixels": rgb_foreground_pixels,
         "total_visible_bond_pixels": int(sum(bond_pixel_counts.values())),
         "visible_atom_instances": visible_atoms,
         "visible_bond_instances": visible_bonds,
