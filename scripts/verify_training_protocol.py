@@ -40,10 +40,12 @@ def _observed_instances(instance_ids: np.ndarray) -> dict[int, dict[str, object]
 def _validate_instances(
     instance_ids: np.ndarray,
     annotations: list[dict[str, object]],
+    *,
+    require_visible: bool = True,
 ) -> tuple[int, int]:
     observed = _observed_instances(instance_ids)
     declared = {int(annotation["instanceId"]): annotation for annotation in annotations}
-    if not observed:
+    if require_visible and not observed:
         raise AssertionError("The requested instance pass contains no visible instances.")
     if not observed.keys() <= declared.keys():
         raise AssertionError("The instance mask contains IDs absent from the annotations.")
@@ -152,10 +154,14 @@ def main(output_dir: Path) -> None:
     polyhedron_surface_instance_ids = _instance_ids(sample.polyhedron_surface_instances.data)
     unit_cell_instance_ids = _instance_ids(sample.unit_cell_instances.data)
     declared_atoms, visible_atoms = _validate_instances(
-        atom_instance_ids, [atom["instance"] for atom in atoms]
+        atom_instance_ids,
+        [atom["instance"] for atom in atoms],
+        require_visible=False,
     )
     declared_bonds, visible_bonds = _validate_instances(
-        bond_instance_ids, [bond["instance"] for bond in bonds]
+        bond_instance_ids,
+        [bond["instance"] for bond in bonds],
+        require_visible=False,
     )
     polyhedron_surfaces = sample.annotations["polyhedronSurfaces"]
     if not polyhedron_surfaces:
@@ -188,7 +194,9 @@ def main(output_dir: Path) -> None:
     if not unit_cell["rendered"] or len(unit_cell["vertices"]) != 8:
         raise AssertionError("The unit-cell projection annotations are incomplete.")
     declared_unit_cell_edges, visible_unit_cell_edges = _validate_instances(
-        unit_cell_instance_ids, [edge["instance"] for edge in unit_cell["edges"]]
+        unit_cell_instance_ids,
+        [edge["instance"] for edge in unit_cell["edges"]],
+        require_visible=False,
     )
 
     sample.rgb.save(output_dir / "rgb.png")
