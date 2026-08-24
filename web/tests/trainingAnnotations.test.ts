@@ -130,6 +130,78 @@ describe("training render annotations", () => {
     ]);
   });
 
+  test("projects displayed polyhedron faces and edges with atom provenance", () => {
+    const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.set(0, 0, 5);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    camera.updateMatrixWorld(true);
+
+    const scene = sceneWithAtom([0, 0, 0]);
+    const vertexPositions: [number, number, number][] = [
+      [-0.5, -0.5, 0],
+      [0.5, -0.5, 0],
+      [0, 0.5, 0],
+      [0, 0, 0.75],
+    ];
+    for (const [index, position] of vertexPositions.entries()) {
+      scene.atoms.push({
+        ...scene.atoms[0]!,
+        id: `O-${index}`,
+        position,
+        siteId: `O-${index}`,
+        siteIndex: index + 1,
+      });
+    }
+    scene.polyhedra.push({
+      centerAtomIndex: 0,
+      faces: [
+        [0, 1, 2],
+        [0, 1, 3],
+        [0, 2, 3],
+        [1, 2, 3],
+      ],
+      hullAtomIndices: [1, 2, 3, 4],
+      visibilityDependencies: [],
+      visibilityDependencyGroups: [],
+    });
+
+    const metadata = structureRasterMetadata({
+      camera,
+      cameraPose: createCameraPoseSnapshot(camera.quaternion),
+      exportFramePlan: {
+        aspectRatio: 1,
+        bounds: null,
+        centerX: 0,
+        centerY: 0,
+        height: 100,
+        width: 100,
+        zoom: 1,
+      },
+      groupPosition: [0, 0, 0],
+      height: 100,
+      scene,
+      showUnitCell: false,
+      supersampling: 1,
+      width: 100,
+    });
+
+    expect(metadata.polyhedronSurfaces).toHaveLength(4);
+    expect(metadata.polyhedronEdges).toHaveLength(6);
+    expect(metadata.polyhedronSurfaces[0]).toMatchObject({
+      atomIndices: [1, 2, 3],
+      renderAtomIds: ["O-0", "O-1", "O-2"],
+      surfaceIndex: 0,
+      vertexXy: [
+        [25, 75],
+        [75, 75],
+        [50, 25],
+      ],
+    });
+    expect(metadata.polyhedronEdges[0]?.startRenderAtomId).toMatch(/^O-/);
+    expect(metadata.polyhedronEdges[0]?.endRenderAtomId).toMatch(/^O-/);
+  });
+
   test("decodes the depth-pass background as normalized depth one", () => {
     expect(unpackRgbaDepth(255, 255, 255, 255)).toBeCloseTo(1, 8);
     expect(unpackRgbaDepth(0, 0, 0, 0)).toBe(0);

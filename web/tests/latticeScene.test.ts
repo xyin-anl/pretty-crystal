@@ -50,6 +50,7 @@ import {
   computeStandardCameraPose,
 } from "../src/scene/viewMath";
 import { computeOrientationGizmoAxes } from "../src/scene/orientationGizmoMath";
+import { createDisplayedPolyhedronGeometry } from "../src/scene/polyhedronDisplayGeometry";
 
 describe("computeSceneLayout", () => {
   test("anchors the preview on the unit-cell center instead of atom distribution", () => {
@@ -636,6 +637,49 @@ describe("computeSceneLayout", () => {
     expect(batch.items.map((item) => item.polyhedronIndex)).toEqual([0]);
     expect(batch.edgeItems.map((item) => item.polyhedronIndex)).toEqual([0, 1]);
     disposePolyhedronSurfaceBatchBuild(batch);
+  });
+
+  test("records face and edge atom provenance for displayed polyhedra", () => {
+    const scene = sceneWithOffCenterAtoms();
+    const displayed = createDisplayedPolyhedronGeometry({
+      atoms: scene.atoms,
+      polyhedra: [
+        tetrahedronPolyhedron(),
+        { ...tetrahedronPolyhedron(), centerAtomIndex: 1 },
+      ],
+    });
+
+    expect(displayed.surfaces).toHaveLength(4);
+    expect(displayed.surfaces[0]).toMatchObject({
+      atomIndices: [0, 1, 2],
+      renderAtomIds: ["Si-0", "Si-1", "Si-2"],
+      surfaceIndex: 0,
+    });
+    expect(displayed.surfaces[0]?.owners).toEqual([
+      {
+        centerAtomIndex: 0,
+        faceIndex: 0,
+        faceVertexIndices: [0, 1, 2],
+        polyhedronIndex: 0,
+      },
+      {
+        centerAtomIndex: 1,
+        faceIndex: 0,
+        faceVertexIndices: [0, 1, 2],
+        polyhedronIndex: 1,
+      },
+    ]);
+    expect(displayed.edges).toHaveLength(12);
+    expect(displayed.edges.slice(0, 6).every((edge) => edge.polyhedronIndex === 0)).toBe(
+      true,
+    );
+    expect(
+      displayed.edges.every(
+        (edge) =>
+          scene.atoms[edge.startAtomIndex]?.id === edge.startRenderAtomId &&
+          scene.atoms[edge.endAtomIndex]?.id === edge.endRenderAtomId,
+      ),
+    ).toBe(true);
   });
 
   test("keeps nearly coincident but distinct polyhedron surface faces", () => {

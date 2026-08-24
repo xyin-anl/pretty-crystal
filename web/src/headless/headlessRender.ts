@@ -50,6 +50,8 @@ const ATOM_RADIUS_MODELS = ["uniform", "atomic", "vdw", "ionic"] as const;
 const BOND_COLOR_MODES = ["unicolor", "bicolor"] as const;
 const SCREEN_DIRECTIONS = ["right", "upward", "outward"] as const;
 const UNIT_CELL_LINE_STYLES = ["solid", "dashed"] as const;
+let structureImageRendererWarmed = false;
+let trainingRendererWarmed = false;
 
 export interface HeadlessRenderedFile {
   dataBase64: string;
@@ -71,7 +73,9 @@ export interface HeadlessTrainingSampleResult {
     transferDtype: "float32";
     transferByteOrder: "little-endian";
   };
-  rendererProtocolVersion: 4;
+  polyhedronEdgeInstances?: HeadlessRenderedFile;
+  polyhedronSurfaceInstances?: HeadlessRenderedFile;
+  rendererProtocolVersion: 5;
   rgb: HeadlessRenderedFile;
   unitCellInstances?: HeadlessRenderedFile;
 }
@@ -94,6 +98,8 @@ interface HeadlessRenderInputs {
     | "atom_instances"
     | "bond_instances"
     | "depth"
+    | "polyhedron_edge_instances"
+    | "polyhedron_surface_instances"
     | "unit_cell_instances"
   )[];
 }
@@ -181,20 +187,26 @@ async function renderStructureImage(payload: unknown): Promise<HeadlessRenderRes
   }
   const cameraQuaternion = resolveCameraQuaternion(inputs);
 
-  const files = await rejectOnWindowError(
-    createFigureExportFiles({
-      cameraOrientationRef: { current: cameraQuaternion },
-      componentOpacity: inputs.componentOpacity,
-      componentVisibility: inputs.componentVisibility,
-      fileName: inputs.fileName,
-      lightStrength: inputs.lightStrength,
-      scene: inputs.scene,
-      settings: inputs.exportSettings,
-      showCrystalAxisLabels: inputs.showCrystalAxisLabels,
-      style: inputs.style,
-      unitCellLineStyle: inputs.unitCellLineStyle,
-    }),
-  );
+  const createFiles = () =>
+    rejectOnWindowError(
+      createFigureExportFiles({
+        cameraOrientationRef: { current: cameraQuaternion },
+        componentOpacity: inputs.componentOpacity,
+        componentVisibility: inputs.componentVisibility,
+        fileName: inputs.fileName,
+        lightStrength: inputs.lightStrength,
+        scene: inputs.scene,
+        settings: inputs.exportSettings,
+        showCrystalAxisLabels: inputs.showCrystalAxisLabels,
+        style: inputs.style,
+        unitCellLineStyle: inputs.unitCellLineStyle,
+      }),
+    );
+  if (!structureImageRendererWarmed) {
+    await createFiles();
+    structureImageRendererWarmed = true;
+  }
+  const files = await createFiles();
 
   return {
     files: await Promise.all(
@@ -235,22 +247,39 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   ) {
     throw new Error("Unit-cell-instance output requires a visible unit cell with positive opacity.");
   }
+  if (
+    (inputs.trainingOutputs.includes("polyhedron_surface_instances") ||
+      inputs.trainingOutputs.includes("polyhedron_edge_instances")) &&
+    (!inputs.componentVisibility.polyhedra || inputs.componentOpacity.polyhedra <= 0)
+  ) {
+    throw new Error(
+      "Polyhedron-instance output requires visible polyhedra with positive opacity.",
+    );
+  }
   validateTrainingPassOpacity(inputs, visibleScene);
   const cameraQuaternion = resolveCameraQuaternion(inputs);
-  const raster = await rejectOnWindowError(
-    renderExportRaster({
-      cameraPose: createCameraPoseSnapshot(cameraQuaternion),
-      componentOpacity: inputs.componentOpacity,
-      componentVisibility: inputs.componentVisibility,
-      framingScale: inputs.framingScale,
-      lightStrength: inputs.lightStrength,
-      settings: inputs.exportSettings,
-      style: inputs.style,
-      unitCellLineStyle: inputs.unitCellLineStyle,
-      visibleScene,
-      trainingOutputs: inputs.trainingOutputs,
-    }),
-  );
+  const renderRaster = (trainingOutputs: HeadlessRenderInputs["trainingOutputs"]) =>
+    rejectOnWindowError(
+      renderExportRaster({
+        cameraPose: createCameraPoseSnapshot(cameraQuaternion),
+        componentOpacity: inputs.componentOpacity,
+        componentVisibility: inputs.componentVisibility,
+        framingScale: inputs.framingScale,
+        lightStrength: inputs.lightStrength,
+        settings: inputs.exportSettings,
+        style: inputs.style,
+        unitCellLineStyle: inputs.unitCellLineStyle,
+        visibleScene,
+        trainingOutputs,
+      }),
+    );
+  // The first offscreen EffectComposer frame in a fresh browser can be empty.
+  // Pay one discarded render per browser session, not one delay per dataset sample.
+  if (!trainingRendererWarmed) {
+    await renderRaster([]);
+    trainingRendererWarmed = true;
+  }
+  const raster = await renderRaster(inputs.trainingOutputs);
   if (!raster.structureMetadata) {
     throw new Error("The renderer did not return structure annotations.");
   }
@@ -259,6 +288,8 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   const atomInstances = raster.trainingPasses?.atomInstances;
   const bondInstances = raster.trainingPasses?.bondInstances;
   const depth = raster.trainingPasses?.depth;
+  const polyhedronEdgeInstances = raster.trainingPasses?.polyhedronEdgeInstances;
+  const polyhedronSurfaceInstances = raster.trainingPasses?.polyhedronSurfaceInstances;
   const unitCellInstances = raster.trainingPasses?.unitCellInstances;
   return {
     annotations: raster.structureMetadata,
@@ -301,7 +332,25 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
           },
         }
       : {}),
-    rendererProtocolVersion: 4,
+    ...(polyhedronSurfaceInstances
+      ? {
+          polyhedronSurfaceInstances: {
+            dataBase64: await blobToBase64(polyhedronSurfaceInstances.blob),
+            fileName: `${exportFileStem(inputs.fileName)}.polyhedron-surfaces.png`,
+            format: "png",
+          },
+        }
+      : {}),
+    ...(polyhedronEdgeInstances
+      ? {
+          polyhedronEdgeInstances: {
+            dataBase64: await blobToBase64(polyhedronEdgeInstances.blob),
+            fileName: `${exportFileStem(inputs.fileName)}.polyhedron-edges.png`,
+            format: "png",
+          },
+        }
+      : {}),
+    rendererProtocolVersion: 5,
     rgb: {
       dataBase64: await blobToBase64(raster.blob),
       fileName: `${exportFileStem(inputs.fileName)}.${format}`,
@@ -544,7 +593,14 @@ function parseFramingScale(data: unknown): number {
 
 function parseTrainingOutputs(
   data: unknown,
-): ("atom_instances" | "bond_instances" | "depth" | "unit_cell_instances")[] {
+): (
+  | "atom_instances"
+  | "bond_instances"
+  | "depth"
+  | "polyhedron_edge_instances"
+  | "polyhedron_surface_instances"
+  | "unit_cell_instances"
+)[] {
   if (data === undefined || data === null) {
     return [];
   }
@@ -555,6 +611,8 @@ function parseTrainingOutputs(
     "atom_instances",
     "bond_instances",
     "depth",
+    "polyhedron_edge_instances",
+    "polyhedron_surface_instances",
     "unit_cell_instances",
   ] as const;
   return data.map((value, index) =>

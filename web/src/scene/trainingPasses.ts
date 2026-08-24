@@ -2,10 +2,12 @@ import {
   BatchedMesh,
   Color,
   BufferGeometry,
+  Float32BufferAttribute,
   InstancedBufferAttribute,
   InstancedMesh,
   LinearSRGBColorSpace,
   Material,
+  Mesh,
   MeshDepthMaterial,
   NearestFilter,
   NoBlending,
@@ -27,8 +29,11 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import type {
   ProjectedAtomAnnotation,
   ProjectedDisplayBondAnnotation,
+  ProjectedPolyhedronEdgeAnnotation,
+  ProjectedPolyhedronSurfaceAnnotation,
   ProjectedUnitCellEdgeAnnotation,
 } from "./exportRenderer";
+import type { AtomSpec } from "../api/scene";
 
 const BACKGROUND_INSTANCE_ID = 0;
 
@@ -98,10 +103,46 @@ export interface UnitCellInstanceRasterPass {
   targetComponent: "unit-cell-frame";
 }
 
+export interface PolyhedronSurfaceInstanceAnnotation {
+  boundingBox: [number, number, number, number] | null;
+  instanceColor: [number, number, number];
+  instanceId: number;
+  surfaceIndex: number;
+  visiblePixelCount: number;
+}
+
+export interface PolyhedronSurfaceInstanceRasterPass {
+  annotations: PolyhedronSurfaceInstanceAnnotation[];
+  backgroundId: 0;
+  blob: Blob;
+  colorEncoding: "rgb24-little-endian";
+  occluderComponents: "visible-mesh-geometry-excluding-screen-space-lines";
+  targetComponent: "displayed-polyhedron-surface-faces";
+}
+
+export interface PolyhedronEdgeInstanceAnnotation {
+  boundingBox: [number, number, number, number] | null;
+  edgeIndex: number;
+  instanceColor: [number, number, number];
+  instanceId: number;
+  visiblePixelCount: number;
+}
+
+export interface PolyhedronEdgeInstanceRasterPass {
+  annotations: PolyhedronEdgeInstanceAnnotation[];
+  backgroundId: 0;
+  blob: Blob;
+  colorEncoding: "rgb24-little-endian";
+  occluderComponents: "visible-mesh-geometry-excluding-other-screen-space-lines";
+  targetComponent: "displayed-polyhedron-edge-lines";
+}
+
 export interface StructureTrainingPasses {
   atomInstances?: AtomInstanceRasterPass;
   bondInstances?: BondInstanceRasterPass;
   depth?: DepthRasterPass;
+  polyhedronEdgeInstances?: PolyhedronEdgeInstanceRasterPass;
+  polyhedronSurfaceInstances?: PolyhedronSurfaceInstanceRasterPass;
   unitCellInstances?: UnitCellInstanceRasterPass;
 }
 
@@ -115,7 +156,10 @@ export async function renderStructureTrainingPasses({
   atomRadiusPixels,
   outputs,
   projectedBonds,
+  projectedPolyhedronEdges,
+  projectedPolyhedronSurfaces,
   projectedUnitCellEdges,
+  sceneAtoms,
 }: {
   atomRadiusPixels: ReadonlyMap<string, number>;
   camera: OrthographicCamera;
@@ -124,13 +168,18 @@ export async function renderStructureTrainingPasses({
     | "atom_instances"
     | "bond_instances"
     | "depth"
+    | "polyhedron_edge_instances"
+    | "polyhedron_surface_instances"
     | "unit_cell_instances"
   )[];
   projectedAtoms: readonly ProjectedAtomAnnotation[];
   projectedBonds: readonly ProjectedDisplayBondAnnotation[];
+  projectedPolyhedronEdges: readonly ProjectedPolyhedronEdgeAnnotation[];
+  projectedPolyhedronSurfaces: readonly ProjectedPolyhedronSurfaceAnnotation[];
   projectedUnitCellEdges: readonly ProjectedUnitCellEdgeAnnotation[];
   renderer: WebGLRenderer;
   scene: Scene;
+  sceneAtoms: readonly AtomSpec[];
   width: number;
 }): Promise<StructureTrainingPasses> {
   const result: StructureTrainingPasses = {};
@@ -158,6 +207,27 @@ export async function renderStructureTrainingPasses({
   if (outputs.includes("depth")) {
     result.depth = renderDepthPass({ camera, height, renderer, scene, width });
   }
+  if (outputs.includes("polyhedron_surface_instances")) {
+    result.polyhedronSurfaceInstances = await renderPolyhedronSurfaceInstancePass({
+      camera,
+      height,
+      projectedSurfaces: projectedPolyhedronSurfaces,
+      renderer,
+      scene,
+      sceneAtoms,
+      width,
+    });
+  }
+  if (outputs.includes("polyhedron_edge_instances")) {
+    result.polyhedronEdgeInstances = await renderPolyhedronEdgeInstancePass({
+      camera,
+      height,
+      projectedEdges: projectedPolyhedronEdges,
+      renderer,
+      scene,
+      width,
+    });
+  }
   if (outputs.includes("unit_cell_instances")) {
     result.unitCellInstances = await renderUnitCellInstancePass({
       camera,
@@ -169,6 +239,328 @@ export async function renderStructureTrainingPasses({
     });
   }
   return result;
+}
+
+async function renderPolyhedronSurfaceInstancePass({
+  camera,
+  height,
+  projectedSurfaces,
+  renderer,
+  scene,
+  sceneAtoms,
+  width,
+}: {
+  camera: OrthographicCamera;
+  height: number;
+  projectedSurfaces: readonly ProjectedPolyhedronSurfaceAnnotation[];
+  renderer: WebGLRenderer;
+  scene: Scene;
+  sceneAtoms: readonly AtomSpec[];
+  width: number;
+}): Promise<PolyhedronSurfaceInstanceRasterPass> {
+  if (projectedSurfaces.length > 0xffffff) {
+    throw new Error("Polyhedron surface masks support at most 16,777,215 faces.");
+  }
+  const restoredObjects: Array<{
+    material: Material | Material[];
+    object: MaterialObject;
+  }> = [];
+  const disposableMaterials: Material[] = [];
+  const hiddenLines: Object3D[] = [];
+  let surfaceMesh: BatchedMesh | null = null;
+
+  scene.traverse((object) => {
+    if (isScreenSpaceLine(object) && object.visible) {
+      hiddenLines.push(object);
+      object.visible = false;
+      return;
+    }
+    if (!isMaterialObject(object)) {
+      return;
+    }
+    restoredObjects.push({ material: object.material, object });
+    if (
+      object instanceof BatchedMesh &&
+      object.userData.prettyCrystalComponent === "polyhedron-surfaces"
+    ) {
+      if (surfaceMesh) {
+        throw new Error("Expected one displayed polyhedron surface mesh.");
+      }
+      surfaceMesh = object;
+    }
+    const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    const blackMaterials = sourceMaterials.map(flatBlackMaterial);
+    disposableMaterials.push(...blackMaterials);
+    object.material = Array.isArray(object.material) ? blackMaterials : blackMaterials[0]!;
+  });
+
+  let replacement: Mesh | null = null;
+  let replacementGeometry: BufferGeometry | null = null;
+  let replacementMaterial: ShaderMaterial | null = null;
+  const surfaceMeshObject = surfaceMesh as BatchedMesh | null;
+  try {
+    if (projectedSurfaces.length > 0 && !surfaceMeshObject) {
+      throw new Error("Displayed polyhedron faces are missing their surface mesh.");
+    }
+    if (surfaceMeshObject) {
+      const parent = surfaceMeshObject.parent;
+      if (!parent) {
+        throw new Error("The displayed polyhedron surface mesh has no scene parent.");
+      }
+      const positions: number[] = [];
+      const colors: number[] = [];
+      for (const surface of projectedSurfaces) {
+        const [red, green, blue] = instanceIdColor(surface.surfaceIndex + 1);
+        for (const atomIndex of surface.atomIndices) {
+          const atom = sceneAtoms[atomIndex];
+          if (!atom) {
+            throw new Error(
+              `Displayed polyhedron surface ${surface.surfaceIndex} references a missing atom.`,
+            );
+          }
+          positions.push(...atom.position);
+          colors.push(red / 255, green / 255, blue / 255);
+        }
+      }
+      replacementGeometry = new BufferGeometry();
+      replacementGeometry.setAttribute(
+        "position",
+        new Float32BufferAttribute(positions, 3),
+      );
+      replacementGeometry.setAttribute(
+        "instanceIdColorExact",
+        new Float32BufferAttribute(colors, 3),
+      );
+      const sourceMaterial = Array.isArray(surfaceMeshObject.material)
+        ? surfaceMeshObject.material[0]
+        : surfaceMeshObject.material;
+      if (!sourceMaterial) {
+        throw new Error("The displayed polyhedron surface mesh has no material.");
+      }
+      replacementMaterial = flatVertexInstanceMaterial(sourceMaterial);
+      replacement = new Mesh(replacementGeometry, replacementMaterial);
+      replacement.frustumCulled = false;
+      replacement.matrix.copy(surfaceMeshObject.matrix);
+      replacement.matrixAutoUpdate = false;
+      replacement.renderOrder = surfaceMeshObject.renderOrder;
+      parent.add(replacement);
+      surfaceMeshObject.visible = false;
+    }
+
+    const topDownPixels = flipRgbaRows(
+      renderRgbaTarget({
+        camera,
+        clearColor: new Color(0, 0, 0),
+        renderer,
+        scene,
+        width,
+        height,
+      }),
+      width,
+      height,
+    );
+    const visible = instanceStatistics(
+      topDownPixels,
+      width,
+      height,
+      projectedSurfaces.length,
+    );
+    const annotations = projectedSurfaces.map(
+      (surface): PolyhedronSurfaceInstanceAnnotation => {
+        const instanceId = surface.surfaceIndex + 1;
+        const stats = visible[surface.surfaceIndex] ?? emptyInstanceStatistics();
+        return {
+          boundingBox: stats.boundingBox,
+          instanceColor: instanceIdColor(instanceId),
+          instanceId,
+          surfaceIndex: surface.surfaceIndex,
+          visiblePixelCount: stats.visiblePixelCount,
+        };
+      },
+    );
+    return {
+      annotations,
+      backgroundId: BACKGROUND_INSTANCE_ID,
+      blob: await rgbaPixelsToPngBlob(topDownPixels, width, height),
+      colorEncoding: "rgb24-little-endian",
+      occluderComponents: "visible-mesh-geometry-excluding-screen-space-lines",
+      targetComponent: "displayed-polyhedron-surface-faces",
+    };
+  } finally {
+    if (replacement?.parent) {
+      replacement.parent.remove(replacement);
+    }
+    if (surfaceMeshObject) {
+      surfaceMeshObject.visible = true;
+    }
+    replacementGeometry?.dispose();
+    replacementMaterial?.dispose();
+    for (const restored of restoredObjects) {
+      restored.object.material = restored.material;
+    }
+    for (const material of disposableMaterials) {
+      material.dispose();
+    }
+    for (const object of hiddenLines) {
+      object.visible = true;
+    }
+  }
+}
+
+async function renderPolyhedronEdgeInstancePass({
+  camera,
+  height,
+  projectedEdges,
+  renderer,
+  scene,
+  width,
+}: {
+  camera: OrthographicCamera;
+  height: number;
+  projectedEdges: readonly ProjectedPolyhedronEdgeAnnotation[];
+  renderer: WebGLRenderer;
+  scene: Scene;
+  width: number;
+}): Promise<PolyhedronEdgeInstanceRasterPass> {
+  if (projectedEdges.length > 0xffffff) {
+    throw new Error("Polyhedron edge masks support at most 16,777,215 edges.");
+  }
+  const restoredObjects: Array<{
+    material: Material | Material[];
+    object: MaterialObject;
+  }> = [];
+  const restoredLines: Array<{
+    geometry: LineSegmentsGeometry;
+    line: LineSegments2;
+    material: LineMaterial;
+  }> = [];
+  const disposableGeometries: LineSegmentsGeometry[] = [];
+  const disposableMaterials: Material[] = [];
+  const hiddenLines: Object3D[] = [];
+  const mappedEdgeIndices = new Set<number>();
+
+  scene.traverse((object) => {
+    if (isScreenSpaceLine(object)) {
+      if (
+        object instanceof LineSegments2 &&
+        object.userData.prettyCrystalComponent === "polyhedron-edge-lines"
+      ) {
+        if (!(object.geometry instanceof LineSegmentsGeometry)) {
+          throw new Error("A polyhedron edge line has an unexpected geometry.");
+        }
+        if (!(object.material instanceof LineMaterial)) {
+          throw new Error("A polyhedron edge line has an unexpected material.");
+        }
+        const edgeIndices = object.userData.polyhedronEdgeIndices;
+        if (!Array.isArray(edgeIndices)) {
+          throw new Error("A polyhedron edge line is missing its edge-index mapping.");
+        }
+        restoredLines.push({
+          geometry: object.geometry,
+          line: object,
+          material: object.material,
+        });
+        const geometry = object.geometry.clone();
+        const colors = edgeIndices.flatMap((rawEdgeIndex) => {
+          if (
+            !Number.isInteger(rawEdgeIndex) ||
+            rawEdgeIndex < 0 ||
+            rawEdgeIndex >= projectedEdges.length ||
+            mappedEdgeIndices.has(rawEdgeIndex)
+          ) {
+            throw new Error(`Invalid polyhedron edge index ${String(rawEdgeIndex)}.`);
+          }
+          mappedEdgeIndices.add(rawEdgeIndex);
+          const [red, green, blue] = instanceIdColor(rawEdgeIndex + 1);
+          return [red / 255, green / 255, blue / 255, red / 255, green / 255, blue / 255];
+        });
+        geometry.setColors(colors);
+        const material = object.material.clone();
+        material.alphaToCoverage = false;
+        material.blending = NoBlending;
+        material.color.setRGB(1, 1, 1);
+        material.fog = false;
+        material.opacity = 1;
+        material.toneMapped = false;
+        material.transparent = false;
+        material.vertexColors = true;
+        material.needsUpdate = true;
+        object.geometry = geometry;
+        object.material = material;
+        disposableGeometries.push(geometry);
+        disposableMaterials.push(material);
+      } else if (object.visible) {
+        hiddenLines.push(object);
+        object.visible = false;
+      }
+      return;
+    }
+    if (!isMaterialObject(object)) {
+      return;
+    }
+    restoredObjects.push({ material: object.material, object });
+    const sourceMaterials = Array.isArray(object.material) ? object.material : [object.material];
+    const blackMaterials = sourceMaterials.map(flatBlackMaterial);
+    disposableMaterials.push(...blackMaterials);
+    object.material = Array.isArray(object.material) ? blackMaterials : blackMaterials[0]!;
+  });
+
+  try {
+    if (mappedEdgeIndices.size !== projectedEdges.length) {
+      throw new Error(
+        `Mapped ${mappedEdgeIndices.size} of ${projectedEdges.length} displayed polyhedron edges.`,
+      );
+    }
+    const topDownPixels = flipRgbaRows(
+      renderRgbaTarget({
+        camera,
+        clearColor: new Color(0, 0, 0),
+        renderer,
+        scene,
+        width,
+        height,
+      }),
+      width,
+      height,
+    );
+    const visible = instanceStatistics(topDownPixels, width, height, projectedEdges.length);
+    const annotations = projectedEdges.map((edge): PolyhedronEdgeInstanceAnnotation => {
+      const instanceId = edge.edgeIndex + 1;
+      const stats = visible[edge.edgeIndex] ?? emptyInstanceStatistics();
+      return {
+        boundingBox: stats.boundingBox,
+        edgeIndex: edge.edgeIndex,
+        instanceColor: instanceIdColor(instanceId),
+        instanceId,
+        visiblePixelCount: stats.visiblePixelCount,
+      };
+    });
+    return {
+      annotations,
+      backgroundId: BACKGROUND_INSTANCE_ID,
+      blob: await rgbaPixelsToPngBlob(topDownPixels, width, height),
+      colorEncoding: "rgb24-little-endian",
+      occluderComponents: "visible-mesh-geometry-excluding-other-screen-space-lines",
+      targetComponent: "displayed-polyhedron-edge-lines",
+    };
+  } finally {
+    for (const restored of restoredObjects) {
+      restored.object.material = restored.material;
+    }
+    for (const restored of restoredLines) {
+      restored.line.geometry = restored.geometry;
+      restored.line.material = restored.material;
+    }
+    for (const object of hiddenLines) {
+      object.visible = true;
+    }
+    for (const geometry of disposableGeometries) {
+      geometry.dispose();
+    }
+    for (const material of disposableMaterials) {
+      material.dispose();
+    }
+  }
 }
 
 async function renderUnitCellInstancePass({
@@ -773,6 +1165,35 @@ function flatBlackMaterial(source: Material): Material {
         vec3 transformed = vec3(position);
         #include <batching_vertex>
         #include <project_vertex>
+      }
+    `,
+  });
+}
+
+function flatVertexInstanceMaterial(source: Material): ShaderMaterial {
+  return new ShaderMaterial({
+    blending: NoBlending,
+    depthTest: true,
+    depthWrite: true,
+    fog: false,
+    fragmentShader: `
+      varying vec3 vInstanceColor;
+      void main() {
+        gl_FragColor = vec4(vInstanceColor, 1.0);
+      }
+    `,
+    polygonOffset: source.polygonOffset,
+    polygonOffsetFactor: source.polygonOffsetFactor,
+    polygonOffsetUnits: source.polygonOffsetUnits,
+    side: source.side,
+    toneMapped: false,
+    transparent: false,
+    vertexShader: `
+      attribute vec3 instanceIdColorExact;
+      varying vec3 vInstanceColor;
+      void main() {
+        vInstanceColor = instanceIdColorExact;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
       }
     `,
   });

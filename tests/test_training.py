@@ -55,6 +55,18 @@ class FakeTrainingRenderer:
                 if "bond_instances" in outputs
                 else None
             ),
+            polyhedron_edge_instances=(
+                RenderedFigureFile(b"polyhedron-edges", "SrTiO3.polyhedron-edges.png", "png")
+                if "polyhedron_edge_instances" in outputs
+                else None
+            ),
+            polyhedron_surface_instances=(
+                RenderedFigureFile(
+                    b"polyhedron-surfaces", "SrTiO3.polyhedron-surfaces.png", "png"
+                )
+                if "polyhedron_surface_instances" in outputs
+                else None
+            ),
             unit_cell_instances=(
                 RenderedFigureFile(b"unit-cell", "SrTiO3.unit-cell.png", "png")
                 if "unit_cell_instances" in outputs
@@ -155,6 +167,33 @@ def test_render_training_sample_returns_requested_unit_cell_instances(monkeypatc
     assert renderer.calls[0]["outputs"] == ("unit_cell_instances",)
 
 
+def test_render_training_sample_returns_requested_polyhedron_instances(monkeypatch) -> None:
+    renderer = FakeTrainingRenderer()
+    monkeypatch.setattr("pretty_crystal.training._renderer", lambda: renderer)
+
+    sample = render_training_sample(
+        FIXTURE_DIR / "SrTiO3.cif",
+        structure_id="structure-" + "a" * 64,
+        canonical_structure_hash="a" * 64,
+        seed=42,
+        outputs=(
+            "rgb",
+            "polyhedron_surface_instances",
+            "polyhedron_edge_instances",
+            "metadata",
+        ),
+    )
+
+    assert sample.polyhedron_surface_instances is not None
+    assert sample.polyhedron_surface_instances.data == b"polyhedron-surfaces"
+    assert sample.polyhedron_edge_instances is not None
+    assert sample.polyhedron_edge_instances.data == b"polyhedron-edges"
+    assert renderer.calls[0]["outputs"] == (
+        "polyhedron_surface_instances",
+        "polyhedron_edge_instances",
+    )
+
+
 def test_render_training_samples_reuses_one_structure_scene(monkeypatch) -> None:
     renderer = FakeTrainingRenderer()
     monkeypatch.setattr("pretty_crystal.training._renderer", lambda: renderer)
@@ -238,6 +277,8 @@ def test_headless_training_bridge_decodes_protocol_result() -> None:
     assert result.bond_instances is not None
     assert result.bond_instances.data == b"bonds"
     assert result.unit_cell_instances is None
+    assert result.polyhedron_edge_instances is None
+    assert result.polyhedron_surface_instances is None
     assert result.depth is None
     assert result.rgb.data == b"rgb"
     assert result.rgb.file_name == "sample.png"

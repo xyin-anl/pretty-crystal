@@ -50,6 +50,10 @@ import {
   computeOrientationGizmoAxes,
   type OrientationGizmoAxisSpec,
 } from "./orientationGizmoMath";
+import {
+  createDisplayedPolyhedronGeometry,
+  type DisplayedPolyhedronSurfaceOwner,
+} from "./polyhedronDisplayGeometry";
 
 export const STRUCTURE_LINE_WIDTH_REFERENCE_RATIO = 0.001;
 export const STRUCTURE_LINE_WIDTH_MIN_PIXELS = 1;
@@ -76,6 +80,8 @@ export interface StructureRasterMetadata {
     zoom: number;
   };
   polyhedra: SceneSpec["polyhedra"];
+  polyhedronEdges: ProjectedPolyhedronEdgeAnnotation[];
+  polyhedronSurfaces: ProjectedPolyhedronSurfaceAnnotation[];
   unitCell: ProjectedUnitCellAnnotation;
   training?: {
     atomInstances?: Omit<
@@ -84,6 +90,14 @@ export interface StructureRasterMetadata {
     >;
     bondInstances?: Omit<
       NonNullable<StructureTrainingPasses["bondInstances"]>,
+      "annotations" | "blob"
+    >;
+    polyhedronEdgeInstances?: Omit<
+      NonNullable<StructureTrainingPasses["polyhedronEdgeInstances"]>,
+      "annotations" | "blob"
+    >;
+    polyhedronSurfaceInstances?: Omit<
+      NonNullable<StructureTrainingPasses["polyhedronSurfaceInstances"]>,
       "annotations" | "blob"
     >;
     depth?: Omit<NonNullable<StructureTrainingPasses["depth"]>, "data"> & {
@@ -132,6 +146,28 @@ export type ProjectedDisplayBondAnnotation = SceneSpec["bonds"][number] & {
   startRenderAtomId: string;
   startXy: [number, number];
 };
+
+export interface ProjectedPolyhedronSurfaceAnnotation {
+  atomIndices: [number, number, number];
+  instance?: import("./trainingPasses").PolyhedronSurfaceInstanceAnnotation;
+  owners: DisplayedPolyhedronSurfaceOwner[];
+  renderAtomIds: [string, string, string];
+  surfaceIndex: number;
+  vertexXy: [[number, number], [number, number], [number, number]];
+}
+
+export interface ProjectedPolyhedronEdgeAnnotation {
+  centerAtomIndex: number;
+  edgeIndex: number;
+  endAtomIndex: number;
+  endRenderAtomId: string;
+  endXy: [number, number];
+  instance?: import("./trainingPasses").PolyhedronEdgeInstanceAnnotation;
+  polyhedronIndex: number;
+  startAtomIndex: number;
+  startRenderAtomId: string;
+  startXy: [number, number];
+}
 
 export interface ProjectedUnitCellVertexAnnotation {
   cameraDepth: number;
@@ -200,6 +236,8 @@ export interface RenderStructureRasterOptions {
     | "atom_instances"
     | "bond_instances"
     | "depth"
+    | "polyhedron_edge_instances"
+    | "polyhedron_surface_instances"
     | "unit_cell_instances"
   )[];
 }
@@ -391,8 +429,11 @@ export async function renderStructureRasterImage({
         outputs: trainingOutputs,
         projectedAtoms: structureMetadata.atoms,
         projectedBonds: structureMetadata.displayBonds,
+        projectedPolyhedronEdges: structureMetadata.polyhedronEdges,
+        projectedPolyhedronSurfaces: structureMetadata.polyhedronSurfaces,
         projectedUnitCellEdges: structureMetadata.unitCell.edges,
         renderer: state.gl,
+        sceneAtoms: scene.atoms,
         scene: state.scene,
         width,
       });
@@ -432,6 +473,32 @@ export async function renderStructureRasterImage({
           instance: instancesByEdgeIndex.get(edge.edgeIndex),
         }));
       }
+      if (trainingPasses.polyhedronSurfaceInstances) {
+        const instancesBySurfaceIndex = new Map(
+          trainingPasses.polyhedronSurfaceInstances.annotations.map((annotation) => [
+            annotation.surfaceIndex,
+            annotation,
+          ]),
+        );
+        structureMetadata.polyhedronSurfaces = structureMetadata.polyhedronSurfaces.map(
+          (surface) => ({
+            ...surface,
+            instance: instancesBySurfaceIndex.get(surface.surfaceIndex),
+          }),
+        );
+      }
+      if (trainingPasses.polyhedronEdgeInstances) {
+        const instancesByEdgeIndex = new Map(
+          trainingPasses.polyhedronEdgeInstances.annotations.map((annotation) => [
+            annotation.edgeIndex,
+            annotation,
+          ]),
+        );
+        structureMetadata.polyhedronEdges = structureMetadata.polyhedronEdges.map((edge) => ({
+          ...edge,
+          instance: instancesByEdgeIndex.get(edge.edgeIndex),
+        }));
+      }
       structureMetadata.training = {
         ...(trainingPasses.atomInstances
           ? {
@@ -465,6 +532,29 @@ export async function renderStructureRasterImage({
                 transferDtype: trainingPasses.depth.transferDtype,
                 transferByteOrder: trainingPasses.depth.transferByteOrder,
                 valueConvention: trainingPasses.depth.valueConvention,
+              },
+            }
+          : {}),
+        ...(trainingPasses.polyhedronSurfaceInstances
+          ? {
+              polyhedronSurfaceInstances: {
+                backgroundId: trainingPasses.polyhedronSurfaceInstances.backgroundId,
+                colorEncoding: trainingPasses.polyhedronSurfaceInstances.colorEncoding,
+                occluderComponents:
+                  trainingPasses.polyhedronSurfaceInstances.occluderComponents,
+                targetComponent:
+                  trainingPasses.polyhedronSurfaceInstances.targetComponent,
+              },
+            }
+          : {}),
+        ...(trainingPasses.polyhedronEdgeInstances
+          ? {
+              polyhedronEdgeInstances: {
+                backgroundId: trainingPasses.polyhedronEdgeInstances.backgroundId,
+                colorEncoding: trainingPasses.polyhedronEdgeInstances.colorEncoding,
+                occluderComponents:
+                  trainingPasses.polyhedronEdgeInstances.occluderComponents,
+                targetComponent: trainingPasses.polyhedronEdgeInstances.targetComponent,
               },
             }
           : {}),
@@ -571,6 +661,51 @@ export function structureRasterMetadata({
       startXy: startAtom.xy,
     };
   });
+  const displayedPolyhedra = createDisplayedPolyhedronGeometry({
+    atoms: scene.atoms,
+    polyhedra: scene.polyhedra,
+  });
+  const polyhedronSurfaces = displayedPolyhedra.surfaces.map(
+    (surface): ProjectedPolyhedronSurfaceAnnotation => {
+      const projectedVertices = surface.atomIndices.map((atomIndex) => atoms[atomIndex]);
+      if (projectedVertices.some((atom) => !atom)) {
+        throw new Error(
+          `Displayed polyhedron surface ${surface.surfaceIndex} references a missing atom.`,
+        );
+      }
+      return {
+        atomIndices: surface.atomIndices,
+        owners: surface.owners,
+        renderAtomIds: surface.renderAtomIds,
+        surfaceIndex: surface.surfaceIndex,
+        vertexXy: projectedVertices.map((atom) => atom!.xy) as [
+          [number, number],
+          [number, number],
+          [number, number],
+        ],
+      };
+    },
+  );
+  const polyhedronEdges = displayedPolyhedra.edges.map(
+    (edge): ProjectedPolyhedronEdgeAnnotation => {
+      const startAtom = atoms[edge.startAtomIndex];
+      const endAtom = atoms[edge.endAtomIndex];
+      if (!startAtom || !endAtom) {
+        throw new Error(`Displayed polyhedron edge ${edge.edgeIndex} references a missing atom.`);
+      }
+      return {
+        centerAtomIndex: edge.centerAtomIndex,
+        edgeIndex: edge.edgeIndex,
+        endAtomIndex: edge.endAtomIndex,
+        endRenderAtomId: edge.endRenderAtomId,
+        endXy: endAtom.xy,
+        polyhedronIndex: edge.polyhedronIndex,
+        startAtomIndex: edge.startAtomIndex,
+        startRenderAtomId: edge.startRenderAtomId,
+        startXy: startAtom.xy,
+      };
+    },
+  );
   const vertices = cellCorners(scene.cell.vectors).map(
     (corner, vertexIndex): ProjectedUnitCellVertexAnnotation => ({
       ...projectPosition(corner),
@@ -621,6 +756,8 @@ export function structureRasterMetadata({
       zoom: exportFramePlan.zoom / supersampling,
     },
     polyhedra: scene.polyhedra,
+    polyhedronEdges,
+    polyhedronSurfaces,
     unitCell,
   };
 }

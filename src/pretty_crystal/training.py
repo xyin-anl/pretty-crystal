@@ -13,7 +13,7 @@ from pretty_crystal.figures import RenderedFigure, _merge_settings, _renderer, _
 if TYPE_CHECKING:
     from pymatgen.core import Structure
 
-RENDERER_PROTOCOL_VERSION = 4
+RENDERER_PROTOCOL_VERSION = 5
 _SUPPORTED_OUTPUTS = frozenset(
     {
         "rgb",
@@ -21,6 +21,8 @@ _SUPPORTED_OUTPUTS = frozenset(
         "bond_instances",
         "depth",
         "metadata",
+        "polyhedron_edge_instances",
+        "polyhedron_surface_instances",
         "unit_cell_instances",
     }
 )
@@ -33,6 +35,8 @@ class TrainingSample:
     rgb: RenderedFigure
     atom_instances: RenderedFigure | None
     bond_instances: RenderedFigure | None
+    polyhedron_edge_instances: RenderedFigure | None
+    polyhedron_surface_instances: RenderedFigure | None
     unit_cell_instances: RenderedFigure | None
     depth: np.ndarray | None
     structure_id: str
@@ -160,6 +164,8 @@ def render_training_samples(
                     "atom_instances",
                     "bond_instances",
                     "depth",
+                    "polyhedron_edge_instances",
+                    "polyhedron_surface_instances",
                     "unit_cell_instances",
                 }
             ),
@@ -208,6 +214,16 @@ def _training_sample(
         raise RuntimeError("Renderer omitted the requested atom-instance pass.")
     if "bond_instances" in outputs and rendered.bond_instances is None:
         raise RuntimeError("Renderer omitted the requested bond-instance pass.")
+    if (
+        "polyhedron_edge_instances" in outputs
+        and rendered.polyhedron_edge_instances is None
+    ):
+        raise RuntimeError("Renderer omitted the requested polyhedron-edge-instance pass.")
+    if (
+        "polyhedron_surface_instances" in outputs
+        and rendered.polyhedron_surface_instances is None
+    ):
+        raise RuntimeError("Renderer omitted the requested polyhedron-surface-instance pass.")
     if "unit_cell_instances" in outputs and rendered.unit_cell_instances is None:
         raise RuntimeError("Renderer omitted the requested unit-cell-instance pass.")
     if "depth" in outputs and rendered.depth is None:
@@ -239,6 +255,24 @@ def _training_sample(
                 rendered.bond_instances.format,
             )
             if rendered.bond_instances is not None
+            else None
+        ),
+        polyhedron_edge_instances=(
+            RenderedFigure(
+                rendered.polyhedron_edge_instances.data,
+                rendered.polyhedron_edge_instances.file_name,
+                rendered.polyhedron_edge_instances.format,
+            )
+            if rendered.polyhedron_edge_instances is not None
+            else None
+        ),
+        polyhedron_surface_instances=(
+            RenderedFigure(
+                rendered.polyhedron_surface_instances.data,
+                rendered.polyhedron_surface_instances.file_name,
+                rendered.polyhedron_surface_instances.format,
+            )
+            if rendered.polyhedron_surface_instances is not None
             else None
         ),
         unit_cell_instances=(

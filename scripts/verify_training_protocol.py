@@ -40,10 +40,12 @@ def _observed_instances(instance_ids: np.ndarray) -> dict[int, dict[str, object]
 def _validate_instances(
     instance_ids: np.ndarray,
     annotations: list[dict[str, object]],
+    *,
+    require_visible: bool = True,
 ) -> tuple[int, int]:
     observed = _observed_instances(instance_ids)
     declared = {int(annotation["instanceId"]): annotation for annotation in annotations}
-    if not observed:
+    if require_visible and not observed:
         raise AssertionError("The requested instance pass contains no visible instances.")
     if not observed.keys() <= declared.keys():
         raise AssertionError("The instance mask contains IDs absent from the annotations.")
@@ -90,10 +92,11 @@ def main(output_dir: Path) -> None:
                     "atoms": True,
                     "bonds": True,
                     "unitCell": True,
-                    "polyhedra": False,
+                    "polyhedra": True,
                     "boundaryAtoms": True,
                     "oneHopBondedAtoms": False,
                 },
+                "componentOpacity": {"polyhedra": 100},
                 "export": {
                     "width": WIDTH,
                     "height": HEIGHT,
@@ -109,6 +112,8 @@ def main(output_dir: Path) -> None:
                 "atom_instances",
                 "bond_instances",
                 "depth",
+                "polyhedron_edge_instances",
+                "polyhedron_surface_instances",
                 "unit_cell_instances",
                 "metadata",
             ),
@@ -122,9 +127,17 @@ def main(output_dir: Path) -> None:
         sample.atom_instances is None
         or sample.bond_instances is None
         or sample.depth is None
+        or sample.polyhedron_edge_instances is None
+        or sample.polyhedron_surface_instances is None
         or sample.unit_cell_instances is None
     ):
         raise AssertionError("The renderer omitted a requested training output.")
+    sample.rgb.save(output_dir / "rgb.png")
+    rgb = Image.open(BytesIO(sample.rgb.data)).convert("RGB")
+    rgb_pixels = np.asarray(rgb, dtype=np.uint8)
+    rgb_foreground_pixels = int(np.count_nonzero(np.any(rgb_pixels != 255, axis=2)))
+    if rgb_foreground_pixels == 0:
+        raise AssertionError("The RGB render is empty.")
     if sample.depth.shape != (HEIGHT, WIDTH):
         raise AssertionError(f"Unexpected depth shape {sample.depth.shape}.")
     if not np.isfinite(sample.depth).all() or np.any((sample.depth < 0) | (sample.depth > 1)):
@@ -143,32 +156,77 @@ def main(output_dir: Path) -> None:
 
     atom_instance_ids = _instance_ids(sample.atom_instances.data)
     bond_instance_ids = _instance_ids(sample.bond_instances.data)
+    polyhedron_edge_instance_ids = _instance_ids(sample.polyhedron_edge_instances.data)
+    polyhedron_surface_instance_ids = _instance_ids(sample.polyhedron_surface_instances.data)
     unit_cell_instance_ids = _instance_ids(sample.unit_cell_instances.data)
     declared_atoms, visible_atoms = _validate_instances(
-        atom_instance_ids, [atom["instance"] for atom in atoms]
+        atom_instance_ids,
+        [atom["instance"] for atom in atoms],
+        require_visible=False,
     )
     declared_bonds, visible_bonds = _validate_instances(
-        bond_instance_ids, [bond["instance"] for bond in bonds]
+        bond_instance_ids,
+        [bond["instance"] for bond in bonds],
+        require_visible=False,
     )
+    polyhedron_surfaces = sample.annotations["polyhedronSurfaces"]
+    if not polyhedron_surfaces:
+        raise AssertionError("The smoke structure produced no displayed polyhedron surfaces.")
+    declared_polyhedron_surfaces, visible_polyhedron_surfaces = _validate_instances(
+        polyhedron_surface_instance_ids,
+        [surface["instance"] for surface in polyhedron_surfaces],
+    )
+    if not all(
+        len(surface["atomIndices"]) == 3
+        and len(surface["renderAtomIds"]) == 3
+        and surface["owners"]
+        for surface in polyhedron_surfaces
+    ):
+        raise AssertionError("Polyhedron surface provenance is incomplete.")
+    polyhedron_edges = sample.annotations["polyhedronEdges"]
+    if not polyhedron_edges:
+        raise AssertionError("The smoke structure produced no displayed polyhedron edges.")
+    declared_polyhedron_edges, visible_polyhedron_edges = _validate_instances(
+        polyhedron_edge_instance_ids,
+        [edge["instance"] for edge in polyhedron_edges],
+    )
+    for edge in polyhedron_edges:
+        if (
+            edge["startRenderAtomId"] not in atom_ids
+            or edge["endRenderAtomId"] not in atom_ids
+        ):
+            raise AssertionError("A displayed polyhedron edge endpoint is absent from the atoms.")
     unit_cell = sample.annotations["unitCell"]
     if not unit_cell["rendered"] or len(unit_cell["vertices"]) != 8:
         raise AssertionError("The unit-cell projection annotations are incomplete.")
     declared_unit_cell_edges, visible_unit_cell_edges = _validate_instances(
-        unit_cell_instance_ids, [edge["instance"] for edge in unit_cell["edges"]]
+        unit_cell_instance_ids,
+        [edge["instance"] for edge in unit_cell["edges"]],
+        require_visible=False,
     )
 
-    sample.rgb.save(output_dir / "rgb.png")
     sample.atom_instances.save(output_dir / "atom_instances.png")
     sample.bond_instances.save(output_dir / "bond_instances.png")
+    sample.polyhedron_edge_instances.save(output_dir / "polyhedron_edge_instances.png")
+    sample.polyhedron_surface_instances.save(output_dir / "polyhedron_surface_instances.png")
     sample.unit_cell_instances.save(output_dir / "unit_cell_instances.png")
     np.save(output_dir / "depth.npy", sample.depth)
     _mask_preview(atom_instance_ids).save(output_dir / "atom_instances_preview.png")
     bond_preview = _mask_preview(bond_instance_ids)
     bond_preview.save(output_dir / "bond_instances_preview.png")
+    polyhedron_edge_preview = _mask_preview(polyhedron_edge_instance_ids)
+    polyhedron_edge_preview.save(output_dir / "polyhedron_edge_instances_preview.png")
+    polyhedron_surface_preview = _mask_preview(polyhedron_surface_instance_ids)
+    polyhedron_surface_preview.save(output_dir / "polyhedron_surface_instances_preview.png")
     unit_cell_preview = _mask_preview(unit_cell_instance_ids)
     unit_cell_preview.save(output_dir / "unit_cell_instances_preview.png")
-    rgb = Image.open(BytesIO(sample.rgb.data)).convert("RGB")
     Image.blend(rgb, bond_preview, alpha=0.55).save(output_dir / "rgb_bond_overlay.png")
+    Image.blend(rgb, polyhedron_edge_preview, alpha=0.55).save(
+        output_dir / "rgb_polyhedron_edge_overlay.png"
+    )
+    Image.blend(rgb, polyhedron_surface_preview, alpha=0.55).save(
+        output_dir / "rgb_polyhedron_surface_overlay.png"
+    )
     Image.blend(rgb, unit_cell_preview, alpha=0.55).save(
         output_dir / "rgb_unit_cell_overlay.png"
     )
@@ -181,14 +239,19 @@ def main(output_dir: Path) -> None:
     summary = {
         "declared_atom_instances": declared_atoms,
         "declared_bond_instances": declared_bonds,
+        "declared_polyhedron_edges": declared_polyhedron_edges,
+        "declared_polyhedron_surfaces": declared_polyhedron_surfaces,
         "declared_unit_cell_edges": declared_unit_cell_edges,
         "depth_background_pixels": int(np.count_nonzero(sample.depth == 1)),
         "depth_foreground_pixels": int(np.count_nonzero(sample.depth < 1)),
         "height": HEIGHT,
         "protocol_version": sample.renderer_protocol_version,
+        "rgb_foreground_pixels": rgb_foreground_pixels,
         "total_visible_bond_pixels": int(sum(bond_pixel_counts.values())),
         "visible_atom_instances": visible_atoms,
         "visible_bond_instances": visible_bonds,
+        "visible_polyhedron_edges": visible_polyhedron_edges,
+        "visible_polyhedron_surfaces": visible_polyhedron_surfaces,
         "visible_unit_cell_edges": visible_unit_cell_edges,
         "width": WIDTH,
     }
