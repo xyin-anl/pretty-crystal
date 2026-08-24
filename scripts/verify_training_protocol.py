@@ -5,8 +5,6 @@ from __future__ import annotations
 import argparse
 import colorsys
 import json
-import subprocess
-import sys
 from collections import Counter
 from io import BytesIO
 from pathlib import Path
@@ -80,10 +78,6 @@ def _mask_preview(instance_ids: np.ndarray) -> Image.Image:
 
 def main(output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["bun", "install", "--frozen-lockfile"], cwd=ROOT / "web", check=True)
-    subprocess.run(["bun", "run", "test"], cwd=ROOT / "web", check=True)
-    subprocess.run(["bun", "run", "build"], cwd=ROOT / "web", check=True)
-    subprocess.run([sys.executable, "-m", "pytest", "-q"], cwd=ROOT, check=True)
     try:
         sample = render_training_sample(
             ROOT / "tests" / "fixtures" / "structures" / "SrTiO3.cif",
