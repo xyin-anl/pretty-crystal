@@ -78,6 +78,18 @@ describe("headless render payload", () => {
     expect(inputs.trainingOutputs).toEqual(["unit_cell_instances"]);
   });
 
+  test("accepts the polyhedron face and edge instance outputs", () => {
+    const inputs = parseHeadlessRenderPayload({
+      outputs: ["polyhedron_surface_instances", "polyhedron_edge_instances"],
+      scene: validScene(),
+    });
+
+    expect(inputs.trainingOutputs).toEqual([
+      "polyhedron_surface_instances",
+      "polyhedron_edge_instances",
+    ]);
+  });
+
   test("rejects unknown settings keys with a precise path", () => {
     expect(() =>
       parseHeadlessRenderPayload({

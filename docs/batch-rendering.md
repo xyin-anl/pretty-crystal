@@ -186,6 +186,8 @@ sample = render_training_sample(
         "atom_instances",
         "bond_instances",
         "depth",
+        "polyhedron_edge_instances",
+        "polyhedron_surface_instances",
         "unit_cell_instances",
         "metadata",
     ),
@@ -194,6 +196,8 @@ sample = render_training_sample(
 sample.rgb.save("SrTiO3.png")
 sample.atom_instances.save("SrTiO3.atoms.png")
 sample.bond_instances.save("SrTiO3.bonds.png")
+sample.polyhedron_edge_instances.save("SrTiO3.polyhedron-edges.png")
+sample.polyhedron_surface_instances.save("SrTiO3.polyhedron-surfaces.png")
 np.save("SrTiO3.depth.npy", sample.depth.astype(np.float16))
 metadata = sample.metadata()
 ```
@@ -221,6 +225,8 @@ samples = render_training_samples(
                 "atom_instances",
                 "bond_instances",
                 "depth",
+                "polyhedron_edge_instances",
+                "polyhedron_surface_instances",
                 "unit_cell_instances",
                 "metadata",
             ),
@@ -233,14 +239,18 @@ samples = render_training_samples(
 Each returned `TrainingSample` has its own resolved settings, seed, image, and
 annotations. All samples in the call share the same immutable renderer scene.
 
-Protocol version 4 returns RGB bytes; optional atom-instance, displayed-bond,
-and unit-cell-edge instance PNGs; an optional depth array; exact orthographic
-camera matrices and pose; projected atom centers, displayed-bond endpoints, and
-the eight unit-cell vertices and twelve edges in final-image pixels;
+Protocol version 5 returns RGB bytes; optional atom-instance, displayed-bond,
+polyhedron-surface-face, polyhedron-edge, and unit-cell-edge instance PNGs; an
+optional depth array; exact orthographic camera matrices and pose; projected
+atom centers, displayed-bond endpoints, polyhedron face vertices and edge
+endpoints, and the eight unit-cell vertices and twelve edges in final-image pixels;
 camera-space and clip-space atom-center depths; source site indices and periodic
 offsets; polyhedra; the renderer scene and scene-group translation; and resolved
-request settings. Matrices are row-major. The supervision passes use the same
-camera, framing, resolution, and visible mesh geometry as RGB.
+request settings. Polyhedron surfaces are deduplicated exactly as in the RGB
+renderer and retain every owning polyhedron and face; every surface vertex and
+edge endpoint records its rendered-atom identity. Matrices are row-major. The
+supervision passes use the same camera, framing, resolution, and visible mesh
+geometry as RGB.
 
 `withinFrame` means that an atom center is inside the camera frustum. It is not
 an occlusion label. The instance mask uses background ID zero and little-endian

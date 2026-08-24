@@ -110,10 +110,11 @@ def test_training_supervision_passes_align_with_camera() -> None:
                 "atoms": True,
                 "bonds": True,
                 "unitCell": True,
-                "polyhedra": False,
+                "polyhedra": True,
                 "boundaryAtoms": True,
                 "oneHopBondedAtoms": False,
             },
+            "componentOpacity": {"polyhedra": 100},
             "export": {
                 "width": 128,
                 "height": 128,
@@ -129,6 +130,8 @@ def test_training_supervision_passes_align_with_camera() -> None:
             "atom_instances",
             "bond_instances",
             "depth",
+            "polyhedron_edge_instances",
+            "polyhedron_surface_instances",
             "unit_cell_instances",
             "metadata",
         ),
@@ -136,6 +139,8 @@ def test_training_supervision_passes_align_with_camera() -> None:
 
     assert sample.atom_instances is not None
     assert sample.bond_instances is not None
+    assert sample.polyhedron_edge_instances is not None
+    assert sample.polyhedron_surface_instances is not None
     assert sample.unit_cell_instances is not None
     assert sample.depth is not None
     mask = np.asarray(
@@ -165,6 +170,43 @@ def test_training_supervision_passes_align_with_camera() -> None:
     atom_ids = {atom["renderAtomId"] for atom in sample.annotations["atoms"]}
     assert all(bond["startRenderAtomId"] in atom_ids for bond in display_bonds)
     assert all(bond["endRenderAtomId"] in atom_ids for bond in display_bonds)
+    surface_mask = np.asarray(
+        Image.open(BytesIO(sample.polyhedron_surface_instances.data)).convert("RGB"),
+        dtype=np.uint32,
+    )
+    surface_instance_ids = (
+        surface_mask[:, :, 0]
+        + (surface_mask[:, :, 1] << 8)
+        + (surface_mask[:, :, 2] << 16)
+    )
+    surfaces = sample.annotations["polyhedronSurfaces"]
+    declared_surface_ids = {surface["instance"]["instanceId"] for surface in surfaces}
+    actual_surface_ids = set(np.unique(surface_instance_ids)) - {0}
+    assert surfaces
+    assert actual_surface_ids
+    assert actual_surface_ids <= declared_surface_ids
+    assert all(len(surface["atomIndices"]) == 3 for surface in surfaces)
+    assert all(len(surface["owners"]) >= 1 for surface in surfaces)
+
+    polyhedron_edge_mask = np.asarray(
+        Image.open(BytesIO(sample.polyhedron_edge_instances.data)).convert("RGB"),
+        dtype=np.uint32,
+    )
+    polyhedron_edge_ids = (
+        polyhedron_edge_mask[:, :, 0]
+        + (polyhedron_edge_mask[:, :, 1] << 8)
+        + (polyhedron_edge_mask[:, :, 2] << 16)
+    )
+    polyhedron_edges = sample.annotations["polyhedronEdges"]
+    declared_polyhedron_edge_ids = {
+        edge["instance"]["instanceId"] for edge in polyhedron_edges
+    }
+    actual_polyhedron_edge_ids = set(np.unique(polyhedron_edge_ids)) - {0}
+    assert polyhedron_edges
+    assert actual_polyhedron_edge_ids
+    assert actual_polyhedron_edge_ids <= declared_polyhedron_edge_ids
+    assert all(edge["startRenderAtomId"] in atom_ids for edge in polyhedron_edges)
+    assert all(edge["endRenderAtomId"] in atom_ids for edge in polyhedron_edges)
     unit_cell_mask = np.asarray(
         Image.open(BytesIO(sample.unit_cell_instances.data)).convert("RGB"), dtype=np.uint32
     )

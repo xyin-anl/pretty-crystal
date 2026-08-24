@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://pretty-crystal.local/schemas/training-protocol-4.json",
+  "$id": "https://pretty-crystal.local/schemas/training-protocol-5.json",
   "title": "Pretty Crystal training sample metadata",
   "type": "object",
   "additionalProperties": false,
@@ -14,7 +14,7 @@
     "annotations"
   ],
   "properties": {
-    "renderer_protocol_version": {"const": 4},
+    "renderer_protocol_version": {"const": 5},
     "structure_id": {"type": "string", "minLength": 1},
     "canonical_structure_hash": {"type": "string", "minLength": 1},
     "seed": {"type": "integer", "minimum": 0},
@@ -23,7 +23,16 @@
     "annotations": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["atoms", "camera", "displayBonds", "frame", "polyhedra", "unitCell"],
+      "required": [
+        "atoms",
+        "camera",
+        "displayBonds",
+        "frame",
+        "polyhedra",
+        "polyhedronEdges",
+        "polyhedronSurfaces",
+        "unitCell"
+      ],
       "properties": {
         "atoms": {
           "type": "array",
@@ -170,6 +179,97 @@
           }
         },
         "polyhedra": {"type": "array", "items": {"type": "object"}},
+        "polyhedronEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "centerAtomIndex",
+              "edgeIndex",
+              "endAtomIndex",
+              "endRenderAtomId",
+              "endXy",
+              "polyhedronIndex",
+              "startAtomIndex",
+              "startRenderAtomId",
+              "startXy"
+            ],
+            "properties": {
+              "centerAtomIndex": {"type": "integer", "minimum": 0},
+              "edgeIndex": {"type": "integer", "minimum": 0},
+              "endAtomIndex": {"type": "integer", "minimum": 0},
+              "endRenderAtomId": {"type": "string"},
+              "endXy": {"$ref": "#/$defs/vector2"},
+              "polyhedronIndex": {"type": "integer", "minimum": 0},
+              "startAtomIndex": {"type": "integer", "minimum": 0},
+              "startRenderAtomId": {"type": "string"},
+              "startXy": {"$ref": "#/$defs/vector2"},
+              "instance": {"$ref": "#/$defs/polyhedronEdgeInstance"}
+            }
+          }
+        },
+        "polyhedronSurfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "atomIndices",
+              "owners",
+              "renderAtomIds",
+              "surfaceIndex",
+              "vertexXy"
+            ],
+            "properties": {
+              "atomIndices": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {"type": "integer", "minimum": 0}
+              },
+              "owners": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "centerAtomIndex",
+                    "faceIndex",
+                    "faceVertexIndices",
+                    "polyhedronIndex"
+                  ],
+                  "properties": {
+                    "centerAtomIndex": {"type": "integer", "minimum": 0},
+                    "faceIndex": {"type": "integer", "minimum": 0},
+                    "faceVertexIndices": {
+                      "type": "array",
+                      "minItems": 3,
+                      "maxItems": 3,
+                      "items": {"type": "integer", "minimum": 0}
+                    },
+                    "polyhedronIndex": {"type": "integer", "minimum": 0}
+                  }
+                }
+              },
+              "renderAtomIds": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {"type": "string"}
+              },
+              "surfaceIndex": {"type": "integer", "minimum": 0},
+              "vertexXy": {
+                "type": "array",
+                "minItems": 3,
+                "maxItems": 3,
+                "items": {"$ref": "#/$defs/vector2"}
+              },
+              "instance": {"$ref": "#/$defs/polyhedronSurfaceInstance"}
+            }
+          }
+        },
         "unitCell": {
           "type": "object",
           "additionalProperties": false,
@@ -300,6 +400,42 @@
                 "valueConvention": {"const": "orthographic-normalized-device-depth"}
               }
             },
+            "polyhedronEdgeInstances": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "backgroundId",
+                "colorEncoding",
+                "occluderComponents",
+                "targetComponent"
+              ],
+              "properties": {
+                "backgroundId": {"const": 0},
+                "colorEncoding": {"const": "rgb24-little-endian"},
+                "occluderComponents": {
+                  "const": "visible-mesh-geometry-excluding-other-screen-space-lines"
+                },
+                "targetComponent": {"const": "displayed-polyhedron-edge-lines"}
+              }
+            },
+            "polyhedronSurfaceInstances": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "backgroundId",
+                "colorEncoding",
+                "occluderComponents",
+                "targetComponent"
+              ],
+              "properties": {
+                "backgroundId": {"const": 0},
+                "colorEncoding": {"const": "rgb24-little-endian"},
+                "occluderComponents": {
+                  "const": "visible-mesh-geometry-excluding-screen-space-lines"
+                },
+                "targetComponent": {"const": "displayed-polyhedron-surface-faces"}
+              }
+            },
             "unitCellInstances": {
               "type": "object",
               "additionalProperties": false,
@@ -354,6 +490,72 @@
           "items": {"type": "integer", "minimum": 0, "maximum": 255}
         },
         "instanceId": {"type": "integer", "minimum": 1, "maximum": 16777215},
+        "visiblePixelCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "polyhedronEdgeInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundingBox",
+        "edgeIndex",
+        "instanceColor",
+        "instanceId",
+        "visiblePixelCount"
+      ],
+      "properties": {
+        "boundingBox": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {"type": "integer", "minimum": 0}
+            }
+          ]
+        },
+        "edgeIndex": {"type": "integer", "minimum": 0},
+        "instanceColor": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "integer", "minimum": 0, "maximum": 255}
+        },
+        "instanceId": {"type": "integer", "minimum": 1, "maximum": 16777215},
+        "visiblePixelCount": {"type": "integer", "minimum": 0}
+      }
+    },
+    "polyhedronSurfaceInstance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "boundingBox",
+        "instanceColor",
+        "instanceId",
+        "surfaceIndex",
+        "visiblePixelCount"
+      ],
+      "properties": {
+        "boundingBox": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "array",
+              "minItems": 4,
+              "maxItems": 4,
+              "items": {"type": "integer", "minimum": 0}
+            }
+          ]
+        },
+        "instanceColor": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {"type": "integer", "minimum": 0, "maximum": 255}
+        },
+        "instanceId": {"type": "integer", "minimum": 1, "maximum": 16777215},
+        "surfaceIndex": {"type": "integer", "minimum": 0},
         "visiblePixelCount": {"type": "integer", "minimum": 0}
       }
     },

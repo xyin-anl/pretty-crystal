@@ -71,7 +71,9 @@ export interface HeadlessTrainingSampleResult {
     transferDtype: "float32";
     transferByteOrder: "little-endian";
   };
-  rendererProtocolVersion: 4;
+  polyhedronEdgeInstances?: HeadlessRenderedFile;
+  polyhedronSurfaceInstances?: HeadlessRenderedFile;
+  rendererProtocolVersion: 5;
   rgb: HeadlessRenderedFile;
   unitCellInstances?: HeadlessRenderedFile;
 }
@@ -94,6 +96,8 @@ interface HeadlessRenderInputs {
     | "atom_instances"
     | "bond_instances"
     | "depth"
+    | "polyhedron_edge_instances"
+    | "polyhedron_surface_instances"
     | "unit_cell_instances"
   )[];
 }
@@ -235,6 +239,15 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   ) {
     throw new Error("Unit-cell-instance output requires a visible unit cell with positive opacity.");
   }
+  if (
+    (inputs.trainingOutputs.includes("polyhedron_surface_instances") ||
+      inputs.trainingOutputs.includes("polyhedron_edge_instances")) &&
+    (!inputs.componentVisibility.polyhedra || inputs.componentOpacity.polyhedra <= 0)
+  ) {
+    throw new Error(
+      "Polyhedron-instance output requires visible polyhedra with positive opacity.",
+    );
+  }
   validateTrainingPassOpacity(inputs, visibleScene);
   const cameraQuaternion = resolveCameraQuaternion(inputs);
   const raster = await rejectOnWindowError(
@@ -259,6 +272,8 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   const atomInstances = raster.trainingPasses?.atomInstances;
   const bondInstances = raster.trainingPasses?.bondInstances;
   const depth = raster.trainingPasses?.depth;
+  const polyhedronEdgeInstances = raster.trainingPasses?.polyhedronEdgeInstances;
+  const polyhedronSurfaceInstances = raster.trainingPasses?.polyhedronSurfaceInstances;
   const unitCellInstances = raster.trainingPasses?.unitCellInstances;
   return {
     annotations: raster.structureMetadata,
@@ -301,7 +316,25 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
           },
         }
       : {}),
-    rendererProtocolVersion: 4,
+    ...(polyhedronSurfaceInstances
+      ? {
+          polyhedronSurfaceInstances: {
+            dataBase64: await blobToBase64(polyhedronSurfaceInstances.blob),
+            fileName: `${exportFileStem(inputs.fileName)}.polyhedron-surfaces.png`,
+            format: "png",
+          },
+        }
+      : {}),
+    ...(polyhedronEdgeInstances
+      ? {
+          polyhedronEdgeInstances: {
+            dataBase64: await blobToBase64(polyhedronEdgeInstances.blob),
+            fileName: `${exportFileStem(inputs.fileName)}.polyhedron-edges.png`,
+            format: "png",
+          },
+        }
+      : {}),
+    rendererProtocolVersion: 5,
     rgb: {
       dataBase64: await blobToBase64(raster.blob),
       fileName: `${exportFileStem(inputs.fileName)}.${format}`,
@@ -544,7 +577,14 @@ function parseFramingScale(data: unknown): number {
 
 function parseTrainingOutputs(
   data: unknown,
-): ("atom_instances" | "bond_instances" | "depth" | "unit_cell_instances")[] {
+): (
+  | "atom_instances"
+  | "bond_instances"
+  | "depth"
+  | "polyhedron_edge_instances"
+  | "polyhedron_surface_instances"
+  | "unit_cell_instances"
+)[] {
   if (data === undefined || data === null) {
     return [];
   }
@@ -555,6 +595,8 @@ function parseTrainingOutputs(
     "atom_instances",
     "bond_instances",
     "depth",
+    "polyhedron_edge_instances",
+    "polyhedron_surface_instances",
     "unit_cell_instances",
   ] as const;
   return data.map((value, index) =>

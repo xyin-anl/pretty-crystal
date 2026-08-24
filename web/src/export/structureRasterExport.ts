@@ -40,6 +40,8 @@ export async function renderExportRaster({
     | "atom_instances"
     | "bond_instances"
     | "depth"
+    | "polyhedron_edge_instances"
+    | "polyhedron_surface_instances"
     | "unit_cell_instances"
   )[];
 }): Promise<RasterExportImage> {

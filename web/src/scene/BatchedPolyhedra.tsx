@@ -5,7 +5,6 @@ import {
   BufferGeometry,
   Color,
   DoubleSide,
-  EdgesGeometry,
   Matrix4,
 } from "three";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
@@ -24,6 +23,10 @@ import type { StyleState } from "../model";
 import { StructureMaterial } from "./StructureMaterial";
 import type { ResolvedStructureMaterialFamily } from "./materialPresetResolver";
 import { STRUCTURE_RENDER_ORDER } from "./renderOrder";
+import {
+  createDisplayedPolyhedronGeometry,
+  type DisplayedPolyhedronEdge,
+} from "./polyhedronDisplayGeometry";
 import { polyhedronGeometryFromAtoms } from "./structureGeometry";
 
 export const POLYHEDRON_SURFACE_OPACITY = 0.5;
@@ -50,6 +53,7 @@ export interface PolyhedronSurfaceRenderItem {
 }
 
 export interface PolyhedronEdgeRenderItem {
+  edges: DisplayedPolyhedronEdge[];
   polyhedron: PolyhedronSpec;
   polyhedronIndex: number;
 }
@@ -130,6 +134,7 @@ export function BatchedPolyhedra({
           // fully opaque shadow silhouettes, so they only receive shadows.
           receiveShadow
           renderOrder={STRUCTURE_RENDER_ORDER.polyhedronSurface}
+          userData={{ prettyCrystalComponent: "polyhedron-surfaces" }}
         >
           <StructureMaterial
             color="#ffffff"
@@ -147,9 +152,11 @@ export function BatchedPolyhedra({
         <MemoizedPolyhedronEdges
           key={item.polyhedronIndex}
           atoms={atoms}
+          edges={item.edges}
           lineWidthScale={lineWidthScale}
           opacity={opacity}
           polyhedron={item.polyhedron}
+          polyhedronIndex={item.polyhedronIndex}
         />
       ))}
     </group>
@@ -171,33 +178,37 @@ export function createPolyhedronSurfaceBatchBuild({
 }): PolyhedronSurfaceBatchBuild | null {
   const edgeItems: PolyhedronEdgeRenderItem[] = [];
   const items: PolyhedronSurfaceRenderItem[] = [];
-  const seenSurfaceFaceKeys = new Set<string>();
   let maxIndexCount = 0;
   let maxVertexCount = 0;
+  const displayed = createDisplayedPolyhedronGeometry({ atoms, polyhedra });
+  const edgesByPolyhedron = new Map<number, DisplayedPolyhedronEdge[]>();
+  for (const edge of displayed.edges) {
+    const edges = edgesByPolyhedron.get(edge.polyhedronIndex) ?? [];
+    edges.push(edge);
+    edgesByPolyhedron.set(edge.polyhedronIndex, edges);
+  }
+  const facesByPolyhedron = new Map<number, [number, number, number][]>();
+  for (const surface of displayed.surfaces) {
+    const owner = surface.owners[0]!;
+    const faces = facesByPolyhedron.get(owner.polyhedronIndex) ?? [];
+    faces.push(owner.faceVertexIndices);
+    facesByPolyhedron.set(owner.polyhedronIndex, faces);
+  }
 
-  polyhedra.forEach((polyhedron, polyhedronIndex) => {
+  displayed.validPolyhedronIndices.forEach((polyhedronIndex) => {
+    const polyhedron = polyhedra[polyhedronIndex]!;
     const centerAtom = atoms[polyhedron.centerAtomIndex];
-    if (!centerAtom) {
-      return;
-    }
-
-    if (!isValidPolyhedronForAtoms(polyhedron, atoms)) {
-      return;
-    }
-
     edgeItems.push({
+      edges: edgesByPolyhedron.get(polyhedronIndex) ?? [],
       polyhedron,
       polyhedronIndex,
     });
 
-    const surfacePolyhedron = uniqueSurfacePolyhedron(
-      polyhedron,
-      atoms,
-      seenSurfaceFaceKeys,
-    );
-    if (!surfacePolyhedron) {
+    const uniqueFaces = facesByPolyhedron.get(polyhedronIndex) ?? [];
+    if (uniqueFaces.length === 0) {
       return;
     }
+    const surfacePolyhedron = { ...polyhedron, faces: uniqueFaces };
 
     const geometry = prepareBatchGeometry(
       polyhedronGeometryFromAtoms(surfacePolyhedron, atoms),
@@ -238,106 +249,6 @@ export function createPolyhedronSurfaceBatchBuild({
   };
 }
 
-function isValidPolyhedronForAtoms(
-  polyhedron: PolyhedronSpec,
-  atoms: AtomSpec[],
-): boolean {
-  if (polyhedron.faces.length === 0) {
-    return false;
-  }
-
-  if (polyhedron.hullAtomIndices.some((atomIndex) => !atoms[atomIndex])) {
-    return false;
-  }
-
-  return polyhedron.faces.every(
-    (face) => polyhedronSurfaceFaceKey(polyhedron, atoms, face) !== null,
-  );
-}
-
-function uniqueSurfacePolyhedron(
-  polyhedron: PolyhedronSpec,
-  atoms: AtomSpec[],
-  seenSurfaceFaceKeys: Set<string>,
-): PolyhedronSpec | null {
-  const pendingFaceKeys = new Set<string>();
-  const uniqueFaces: PolyhedronSpec["faces"] = [];
-
-  for (const atomIndex of polyhedron.hullAtomIndices) {
-    if (!atoms[atomIndex]) {
-      return null;
-    }
-  }
-
-  for (const face of polyhedron.faces) {
-    const faceKey = polyhedronSurfaceFaceKey(polyhedron, atoms, face);
-    if (!faceKey) {
-      return null;
-    }
-
-    if (seenSurfaceFaceKeys.has(faceKey) || pendingFaceKeys.has(faceKey)) {
-      continue;
-    }
-
-    pendingFaceKeys.add(faceKey);
-    uniqueFaces.push(face);
-  }
-
-  for (const faceKey of pendingFaceKeys) {
-    seenSurfaceFaceKeys.add(faceKey);
-  }
-
-  if (uniqueFaces.length === polyhedron.faces.length) {
-    return polyhedron;
-  }
-
-  return {
-    ...polyhedron,
-    faces: uniqueFaces,
-  };
-}
-
-function polyhedronSurfaceFaceKey(
-  polyhedron: PolyhedronSpec,
-  atoms: AtomSpec[],
-  face: number[],
-): string | null {
-  if (
-    face.length !== 3 ||
-    new Set(face).size !== 3 ||
-    face.some(
-      (vertexIndex) =>
-        !Number.isInteger(vertexIndex) ||
-        vertexIndex < 0 ||
-        vertexIndex >= polyhedron.hullAtomIndices.length,
-    )
-  ) {
-    return null;
-  }
-
-  const vertexKeys: string[] = [];
-  for (const vertexIndex of face) {
-    const atomIndex = polyhedron.hullAtomIndices[vertexIndex];
-    if (atomIndex === undefined) {
-      return null;
-    }
-
-    const atom = atoms[atomIndex];
-    if (
-      !atom ||
-      atom.position.some((coordinate: number) => !Number.isFinite(coordinate))
-    ) {
-      return null;
-    }
-
-    vertexKeys.push(
-      atom.position.map((coordinate: number) => String(coordinate)).join(","),
-    );
-  }
-
-  return vertexKeys.sort().join("|");
-}
-
 export function disposePolyhedronSurfaceBatchBuild(
   batch: PolyhedronSurfaceBatchBuild | null,
 ) {
@@ -366,30 +277,29 @@ function populateBatchedPolyhedraSurfaces(
 
 function PolyhedronEdges({
   atoms,
+  edges,
   lineWidthScale,
   opacity,
   polyhedron,
+  polyhedronIndex,
 }: {
   atoms: AtomSpec[];
+  edges: DisplayedPolyhedronEdge[];
   lineWidthScale: number;
   opacity: number;
   polyhedron: PolyhedronSpec;
+  polyhedronIndex: number;
 }) {
   const centerAtom = atoms[polyhedron.centerAtomIndex];
-  const geometry = useMemo(
-    () => (centerAtom ? polyhedronGeometryFromAtoms(polyhedron, atoms) : null),
-    [atoms, centerAtom, polyhedron],
-  );
   const edgeLine = useMemo(() => {
-    if (!geometry) {
+    if (!centerAtom || edges.length === 0) {
       return null;
     }
 
-    const edgeGeometry = new EdgesGeometry(geometry);
-    const edgePositions = edgeGeometry.getAttribute("position");
     const lineGeometry = new LineSegmentsGeometry();
-    lineGeometry.setPositions(Array.from(edgePositions.array));
-    edgeGeometry.dispose();
+    lineGeometry.setPositions(
+      edges.flatMap((edge) => [...edge.startPosition, ...edge.endPosition]),
+    );
 
     const material = new LineMaterial({
       alphaToCoverage: true,
@@ -405,14 +315,11 @@ function PolyhedronEdges({
 
     const line = new LineSegments2(lineGeometry, material);
     line.renderOrder = STRUCTURE_RENDER_ORDER.polyhedronEdge;
+    line.userData.polyhedronEdgeIndices = edges.map((edge) => edge.edgeIndex);
+    line.userData.polyhedronIndex = polyhedronIndex;
+    line.userData.prettyCrystalComponent = "polyhedron-edge-lines";
     return line;
-  }, [geometry, lineWidthScale, opacity]);
-
-  useEffect(() => {
-    return () => {
-      geometry?.dispose();
-    };
-  }, [geometry]);
+  }, [centerAtom, edges, lineWidthScale, opacity, polyhedronIndex]);
 
   useEffect(() => {
     return () => {
