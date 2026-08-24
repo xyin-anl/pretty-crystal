@@ -50,6 +50,8 @@ const ATOM_RADIUS_MODELS = ["uniform", "atomic", "vdw", "ionic"] as const;
 const BOND_COLOR_MODES = ["unicolor", "bicolor"] as const;
 const SCREEN_DIRECTIONS = ["right", "upward", "outward"] as const;
 const UNIT_CELL_LINE_STYLES = ["solid", "dashed"] as const;
+let structureImageRendererWarmed = false;
+let trainingRendererWarmed = false;
 
 export interface HeadlessRenderedFile {
   dataBase64: string;
@@ -185,20 +187,26 @@ async function renderStructureImage(payload: unknown): Promise<HeadlessRenderRes
   }
   const cameraQuaternion = resolveCameraQuaternion(inputs);
 
-  const files = await rejectOnWindowError(
-    createFigureExportFiles({
-      cameraOrientationRef: { current: cameraQuaternion },
-      componentOpacity: inputs.componentOpacity,
-      componentVisibility: inputs.componentVisibility,
-      fileName: inputs.fileName,
-      lightStrength: inputs.lightStrength,
-      scene: inputs.scene,
-      settings: inputs.exportSettings,
-      showCrystalAxisLabels: inputs.showCrystalAxisLabels,
-      style: inputs.style,
-      unitCellLineStyle: inputs.unitCellLineStyle,
-    }),
-  );
+  const createFiles = () =>
+    rejectOnWindowError(
+      createFigureExportFiles({
+        cameraOrientationRef: { current: cameraQuaternion },
+        componentOpacity: inputs.componentOpacity,
+        componentVisibility: inputs.componentVisibility,
+        fileName: inputs.fileName,
+        lightStrength: inputs.lightStrength,
+        scene: inputs.scene,
+        settings: inputs.exportSettings,
+        showCrystalAxisLabels: inputs.showCrystalAxisLabels,
+        style: inputs.style,
+        unitCellLineStyle: inputs.unitCellLineStyle,
+      }),
+    );
+  if (!structureImageRendererWarmed) {
+    await createFiles();
+    structureImageRendererWarmed = true;
+  }
+  const files = await createFiles();
 
   return {
     files: await Promise.all(
@@ -250,20 +258,28 @@ async function renderTrainingSample(payload: unknown): Promise<HeadlessTrainingS
   }
   validateTrainingPassOpacity(inputs, visibleScene);
   const cameraQuaternion = resolveCameraQuaternion(inputs);
-  const raster = await rejectOnWindowError(
-    renderExportRaster({
-      cameraPose: createCameraPoseSnapshot(cameraQuaternion),
-      componentOpacity: inputs.componentOpacity,
-      componentVisibility: inputs.componentVisibility,
-      framingScale: inputs.framingScale,
-      lightStrength: inputs.lightStrength,
-      settings: inputs.exportSettings,
-      style: inputs.style,
-      unitCellLineStyle: inputs.unitCellLineStyle,
-      visibleScene,
-      trainingOutputs: inputs.trainingOutputs,
-    }),
-  );
+  const renderRaster = (trainingOutputs: HeadlessRenderInputs["trainingOutputs"]) =>
+    rejectOnWindowError(
+      renderExportRaster({
+        cameraPose: createCameraPoseSnapshot(cameraQuaternion),
+        componentOpacity: inputs.componentOpacity,
+        componentVisibility: inputs.componentVisibility,
+        framingScale: inputs.framingScale,
+        lightStrength: inputs.lightStrength,
+        settings: inputs.exportSettings,
+        style: inputs.style,
+        unitCellLineStyle: inputs.unitCellLineStyle,
+        visibleScene,
+        trainingOutputs,
+      }),
+    );
+  // The first offscreen EffectComposer frame in a fresh browser can be empty.
+  // Pay one discarded render per browser session, not one delay per dataset sample.
+  if (!trainingRendererWarmed) {
+    await renderRaster([]);
+    trainingRendererWarmed = true;
+  }
+  const raster = await renderRaster(inputs.trainingOutputs);
   if (!raster.structureMetadata) {
     throw new Error("The renderer did not return structure annotations.");
   }

@@ -391,7 +391,8 @@ export async function renderStructureRasterImage({
 
     await mounted;
     const state = rootState ?? store.getState();
-    await renderReadyFrames(state);
+    state.advance(performance.now(), true);
+    state.advance(performance.now() + 16, true);
 
     const outputCanvas =
       supersampling === 1 ? canvas : downsampleCanvas(canvas, width, height);
@@ -907,7 +908,8 @@ export async function renderCrystalAxesRasterImage({
 
     await mounted;
     const state = rootState ?? store.getState();
-    await renderReadyFrames(state);
+    state.advance(performance.now(), true);
+    state.advance(performance.now() + 16, true);
 
     const projectedTextItems = crystalAxisTextItems({
       axes,
@@ -955,18 +957,6 @@ function RenderReady({ onReady }: { onReady: () => void }) {
   }, [onReady]);
 
   return null;
-}
-
-async function renderReadyFrames(state: RootState) {
-  await state.gl.compileAsync(state.scene, state.camera);
-  for (let frameIndex = 0; frameIndex < 4; frameIndex += 1) {
-    state.advance(performance.now(), true);
-    if (frameIndex < 3) {
-      await new Promise<void>((resolve) => {
-        window.requestAnimationFrame(() => resolve());
-      });
-    }
-  }
 }
 
 function downsampleCanvas(sourceCanvas: HTMLCanvasElement, width: number, height: number) {
